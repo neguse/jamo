@@ -1,0 +1,97 @@
+#!/bin/bash
+set -e
+
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+echo "=== pre-commit: jamo ==="
+
+# --- 1. フォーマットチェック ---
+echo -n "cargo fmt... "
+if ! cargo fmt --check --quiet 2>/dev/null; then
+    echo -e "${RED}FAIL${NC}"
+    echo "Run 'cargo fmt' to fix formatting."
+    exit 1
+fi
+echo -e "${GREEN}OK${NC}"
+
+# --- 2. clippy ---
+echo -n "cargo clippy... "
+if ! cargo clippy --quiet -- -D warnings 2>/dev/null; then
+    echo -e "${RED}FAIL${NC}"
+    echo "Fix clippy warnings before committing."
+    exit 1
+fi
+echo -e "${GREEN}OK${NC}"
+
+# --- 3. テスト ---
+echo -n "cargo test... "
+if ! cargo test --quiet 2>/dev/null; then
+    echo -e "${RED}FAIL${NC}"
+    echo "Tests failed. Fix before committing."
+    exit 1
+fi
+echo -e "${GREEN}OK${NC}"
+
+# --- 4. ファイル行数チェック ---
+echo -n "file size check... "
+FILE_SIZE_FAIL=0
+for f in $(find jamo-core/src jamo-cli/src -name '*.rs' 2>/dev/null); do
+    lines=$(wc -l < "$f")
+    if [ "$lines" -gt 800 ]; then
+        echo ""
+        echo -e "${RED}RED: $f ($lines lines > 800)${NC}"
+        FILE_SIZE_FAIL=1
+    elif [ "$lines" -gt 600 ]; then
+        echo ""
+        echo -e "${YELLOW}YELLOW: $f ($lines lines > 600)${NC}"
+    fi
+done
+if [ "$FILE_SIZE_FAIL" -eq 1 ]; then
+    echo "Split large files before committing."
+    exit 1
+fi
+echo -e "${GREEN}OK${NC}"
+
+# --- 5. ドキュメント同期チェック ---
+echo -n "doc sync check... "
+STAGED=$(git diff --cached --name-only)
+SRC_CHANGED=0
+DOC_CHANGED=0
+
+echo "$STAGED" | grep -qE '^(jamo-core/src/|jamo-cli/src/|tests/)' && SRC_CHANGED=1
+echo "$STAGED" | grep -qE '^doc/' && DOC_CHANGED=1
+
+if [ "$SRC_CHANGED" -eq 1 ] && [ "$DOC_CHANGED" -eq 0 ]; then
+    echo -e "${RED}FAIL${NC}"
+    echo "Source files changed but no doc/ updates."
+    echo "Update doc/current.md or doc/done.md."
+    exit 1
+fi
+echo -e "${GREEN}OK${NC}"
+
+# --- 6. done.md 完了エントリ検証 ---
+echo -n "done.md format check... "
+if echo "$STAGED" | grep -q '^doc/done.md$'; then
+    DONE_DIFF=$(git diff --cached doc/done.md | grep '^+' | grep -v '^+++')
+
+    # 新しいエントリが追加されている場合、必須セクションをチェック
+    if echo "$DONE_DIFF" | grep -q '^+###.*✓'; then
+        MISSING=""
+        echo "$DONE_DIFF" | grep -q '^\+- やったこと:' || MISSING="$MISSING やったこと"
+        echo "$DONE_DIFF" | grep -q '^\+- よかったこと:' || MISSING="$MISSING よかったこと"
+        echo "$DONE_DIFF" | grep -q '^\+- 判断:' || MISSING="$MISSING 判断"
+        echo "$DONE_DIFF" | grep -q '^\+- 残課題:' || MISSING="$MISSING 残課題"
+
+        if [ -n "$MISSING" ]; then
+            echo -e "${RED}FAIL${NC}"
+            echo "done.md entry missing required sections:$MISSING"
+            exit 1
+        fi
+    fi
+fi
+echo -e "${GREEN}OK${NC}"
+
+echo -e "${GREEN}=== all checks passed ===${NC}"
