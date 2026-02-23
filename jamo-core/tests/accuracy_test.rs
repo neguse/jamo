@@ -1,82 +1,302 @@
-// T030: 変換精度テスト
-// IPAdic を使った変換精度のベースライン計測
+// T030 + T051: 変換精度テスト / 精度評価基盤
+// IPAdic を使った変換精度のベースライン計測 + カテゴリ別評価
 
 use std::path::Path;
 
-/// テストコーパス: (読み, 期待される変換結果)
-/// 一般的な日本語の文を網羅
-fn test_corpus() -> Vec<(&'static str, &'static str)> {
+/// テストコーパスのカテゴリ
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Category {
+    NounPhrase,
+    Adjective,
+    VerbConjugation,
+    Polite,
+    Daily,
+    Place,
+    Time,
+    Complex,
+    ShortVerb,
+    ShortNoun,
+}
+
+/// テストケース
+struct TestCase {
+    input: &'static str,
+    expected: &'static str,
+    category: Category,
+}
+
+fn test_corpus() -> Vec<TestCase> {
     vec![
         // 基本的な名詞+助詞
-        ("わたしはがくせいです", "私は学生です"),
-        ("にほんごをべんきょうする", "日本語を勉強する"),
-        ("とうきょうにいきたい", "東京に行きたい"),
-        ("ほんをよむ", "本を読む"),
-        ("みずをのむ", "水を飲む"),
+        TestCase {
+            input: "わたしはがくせいです",
+            expected: "私は学生です",
+            category: Category::NounPhrase,
+        },
+        TestCase {
+            input: "にほんごをべんきょうする",
+            expected: "日本語を勉強する",
+            category: Category::NounPhrase,
+        },
+        TestCase {
+            input: "とうきょうにいきたい",
+            expected: "東京に行きたい",
+            category: Category::NounPhrase,
+        },
+        TestCase {
+            input: "ほんをよむ",
+            expected: "本を読む",
+            category: Category::NounPhrase,
+        },
+        TestCase {
+            input: "みずをのむ",
+            expected: "水を飲む",
+            category: Category::NounPhrase,
+        },
         // 形容詞
-        ("たかいやま", "高い山"),
-        ("おおきいいえ", "大きい家"),
-        ("あたらしいほん", "新しい本"),
+        TestCase {
+            input: "たかいやま",
+            expected: "高い山",
+            category: Category::Adjective,
+        },
+        TestCase {
+            input: "おおきいいえ",
+            expected: "大きい家",
+            category: Category::Adjective,
+        },
+        TestCase {
+            input: "あたらしいほん",
+            expected: "新しい本",
+            category: Category::Adjective,
+        },
         // 動詞活用
-        ("あるいていく", "歩いていく"),
-        ("たべている", "食べている"),
-        ("はしっている", "走っている"),
+        TestCase {
+            input: "あるいていく",
+            expected: "歩いていく",
+            category: Category::VerbConjugation,
+        },
+        TestCase {
+            input: "たべている",
+            expected: "食べている",
+            category: Category::VerbConjugation,
+        },
+        TestCase {
+            input: "はしっている",
+            expected: "走っている",
+            category: Category::VerbConjugation,
+        },
         // 丁寧語
-        ("おはようございます", "おはようございます"),
-        ("ありがとうございます", "ありがとうございます"),
+        TestCase {
+            input: "おはようございます",
+            expected: "おはようございます",
+            category: Category::Polite,
+        },
+        TestCase {
+            input: "ありがとうございます",
+            expected: "ありがとうございます",
+            category: Category::Polite,
+        },
         // 日常表現
-        ("なまえはたなかです", "名前は田中です"),
-        ("がっこうにいく", "学校に行く"),
-        ("しごとをする", "仕事をする"),
-        ("でんわをかける", "電話をかける"),
-        ("てがみをかく", "手紙を書く"),
+        TestCase {
+            input: "なまえはたなかです",
+            expected: "名前は田中です",
+            category: Category::Daily,
+        },
+        TestCase {
+            input: "がっこうにいく",
+            expected: "学校に行く",
+            category: Category::Daily,
+        },
+        TestCase {
+            input: "しごとをする",
+            expected: "仕事をする",
+            category: Category::Daily,
+        },
+        TestCase {
+            input: "でんわをかける",
+            expected: "電話をかける",
+            category: Category::Daily,
+        },
+        TestCase {
+            input: "てがみをかく",
+            expected: "手紙を書く",
+            category: Category::Daily,
+        },
         // 場所
-        ("おおさかにすんでいます", "大阪に住んでいます"),
-        ("えきまであるく", "駅まで歩く"),
+        TestCase {
+            input: "おおさかにすんでいます",
+            expected: "大阪に住んでいます",
+            category: Category::Place,
+        },
+        TestCase {
+            input: "えきまであるく",
+            expected: "駅まで歩く",
+            category: Category::Place,
+        },
         // 時間
-        ("あしたはやすみです", "明日は休みです"),
-        ("まいにちべんきょうする", "毎日勉強する"),
+        TestCase {
+            input: "あしたはやすみです",
+            expected: "明日は休みです",
+            category: Category::Time,
+        },
+        TestCase {
+            input: "まいにちべんきょうする",
+            expected: "毎日勉強する",
+            category: Category::Time,
+        },
         // やや複雑な文
-        ("にほんのしゅとはとうきょうです", "日本の首都は東京です"),
-        ("ともだちとえいがをみる", "友達と映画を見る"),
-        ("かぞくでりょこうにいく", "家族で旅行に行く"),
-        // 数字・数量関連
-        ("さんにんのがくせい", "三人の学生"),
-        // 接続
-        (
-            "あめがふっているからかさをもつ",
-            "雨が降っているから傘を持つ",
-        ),
-        (
-            "さむいのであたたかいものをたべる",
-            "寒いので暖かいものを食べる",
-        ),
-        // 短い文
-        ("いく", "行く"),
-        ("みる", "見る"),
-        ("する", "する"),
-        ("くる", "来る"),
-        ("ある", "ある"),
-        ("いる", "いる"),
-        ("たべる", "食べる"),
-        ("のむ", "飲む"),
-        ("よむ", "読む"),
-        ("かく", "書く"),
-        ("はなす", "話す"),
-        ("きく", "聞く"),
-        ("おもう", "思う"),
-        ("しる", "知る"),
-        // 名詞単独
-        ("やま", "山"),
-        ("かわ", "川"),
-        ("そら", "空"),
-        ("うみ", "海"),
-        ("はな", "花"),
-        ("ひと", "人"),
-        ("くるま", "車"),
-        ("でんしゃ", "電車"),
-        ("ひこうき", "飛行機"),
-        ("びょういん", "病院"),
+        TestCase {
+            input: "にほんのしゅとはとうきょうです",
+            expected: "日本の首都は東京です",
+            category: Category::Complex,
+        },
+        TestCase {
+            input: "ともだちとえいがをみる",
+            expected: "友達と映画を見る",
+            category: Category::Complex,
+        },
+        TestCase {
+            input: "かぞくでりょこうにいく",
+            expected: "家族で旅行に行く",
+            category: Category::Complex,
+        },
+        TestCase {
+            input: "さんにんのがくせい",
+            expected: "三人の学生",
+            category: Category::Complex,
+        },
+        TestCase {
+            input: "あめがふっているからかさをもつ",
+            expected: "雨が降っているから傘を持つ",
+            category: Category::Complex,
+        },
+        TestCase {
+            input: "さむいのであたたかいものをたべる",
+            expected: "寒いので暖かいものを食べる",
+            category: Category::Complex,
+        },
+        // 短い動詞
+        TestCase {
+            input: "いく",
+            expected: "行く",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "みる",
+            expected: "見る",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "する",
+            expected: "する",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "くる",
+            expected: "来る",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "ある",
+            expected: "ある",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "いる",
+            expected: "いる",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "たべる",
+            expected: "食べる",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "のむ",
+            expected: "飲む",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "よむ",
+            expected: "読む",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "かく",
+            expected: "書く",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "はなす",
+            expected: "話す",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "きく",
+            expected: "聞く",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "おもう",
+            expected: "思う",
+            category: Category::ShortVerb,
+        },
+        TestCase {
+            input: "しる",
+            expected: "知る",
+            category: Category::ShortVerb,
+        },
+        // 短い名詞
+        TestCase {
+            input: "やま",
+            expected: "山",
+            category: Category::ShortNoun,
+        },
+        TestCase {
+            input: "かわ",
+            expected: "川",
+            category: Category::ShortNoun,
+        },
+        TestCase {
+            input: "そら",
+            expected: "空",
+            category: Category::ShortNoun,
+        },
+        TestCase {
+            input: "うみ",
+            expected: "海",
+            category: Category::ShortNoun,
+        },
+        TestCase {
+            input: "はな",
+            expected: "花",
+            category: Category::ShortNoun,
+        },
+        TestCase {
+            input: "ひと",
+            expected: "人",
+            category: Category::ShortNoun,
+        },
+        TestCase {
+            input: "くるま",
+            expected: "車",
+            category: Category::ShortNoun,
+        },
+        TestCase {
+            input: "でんしゃ",
+            expected: "電車",
+            category: Category::ShortNoun,
+        },
+        TestCase {
+            input: "ひこうき",
+            expected: "飛行機",
+            category: Category::ShortNoun,
+        },
+        TestCase {
+            input: "びょういん",
+            expected: "病院",
+            category: Category::ShortNoun,
+        },
     ]
 }
 
@@ -88,7 +308,6 @@ fn load_ipadic() -> Option<jamo_core::ipadic::IpaDict> {
             return jamo_core::ipadic::IpaDict::load(path).ok();
         }
     }
-    // バイナリ辞書
     let bin_candidates = ["../data/ipadic.dict", "data/ipadic.dict"];
     for p in bin_candidates {
         let path = Path::new(p);
@@ -116,25 +335,43 @@ fn test_accuracy_baseline() {
     let mut char_total = 0;
     let mut failures = Vec::new();
 
-    for (input, expected) in &corpus {
-        let result = jamo_core::convert_with_conn(input, &dict, &dict);
+    // カテゴリ別集計
+    let categories = [
+        Category::NounPhrase,
+        Category::Adjective,
+        Category::VerbConjugation,
+        Category::Polite,
+        Category::Daily,
+        Category::Place,
+        Category::Time,
+        Category::Complex,
+        Category::ShortVerb,
+        Category::ShortNoun,
+    ];
+    let mut cat_total: Vec<usize> = vec![0; categories.len()];
+    let mut cat_match: Vec<usize> = vec![0; categories.len()];
+
+    for tc in &corpus {
+        let result = jamo_core::convert_with_conn(tc.input, &dict, &dict);
         let actual: String = result.segments.iter().map(|s| s.surface.as_str()).collect();
 
-        if actual == *expected {
+        let cat_idx = categories.iter().position(|c| *c == tc.category).unwrap();
+        cat_total[cat_idx] += 1;
+
+        if actual == tc.expected {
             exact_match += 1;
+            cat_match[cat_idx] += 1;
         } else {
-            failures.push((input, expected, actual.clone()));
+            failures.push((tc.input, tc.expected, actual.clone(), tc.category));
         }
 
-        // 文字単位の精度
-        for (a, e) in actual.chars().zip(expected.chars()) {
+        for (a, e) in actual.chars().zip(tc.expected.chars()) {
             if a == e {
                 char_correct += 1;
             }
             char_total += 1;
         }
-        // 長さが異なる場合、長い方の余りもカウント
-        let len_diff = actual.chars().count().abs_diff(expected.chars().count());
+        let len_diff = actual.chars().count().abs_diff(tc.expected.chars().count());
         char_total += len_diff;
     }
 
@@ -146,18 +383,22 @@ fn test_accuracy_baseline() {
     eprintln!("文一致率: {exact_match}/{total} ({sentence_accuracy:.1}%)");
     eprintln!("文字精度: {char_correct}/{char_total} ({char_accuracy:.1}%)");
 
-    if !failures.is_empty() {
-        eprintln!("\n不一致:");
-        for (input, expected, actual) in &failures {
-            eprintln!("  {input} → {actual} (期待: {expected})");
+    eprintln!("\n--- カテゴリ別 ---");
+    for (i, cat) in categories.iter().enumerate() {
+        if cat_total[i] > 0 {
+            let rate = cat_match[i] as f64 / cat_total[i] as f64 * 100.0;
+            eprintln!("  {cat:?}: {}/{} ({rate:.0}%)", cat_match[i], cat_total[i]);
         }
     }
 
-    // ベースライン (IPAdic + Viterbi, bigram LM なし):
-    //   文一致率: 48.1% (2026-02-24)
-    //   文字精度: 69.1% (2026-02-24)
-    // 短い単語 (「やま」「みる」等) は文脈なしで精度が低い
-    // bigram LM (T022) で改善見込み
+    if !failures.is_empty() {
+        eprintln!("\n不一致:");
+        for (input, expected, actual, cat) in &failures {
+            eprintln!("  [{cat:?}] {input} → {actual} (期待: {expected})");
+        }
+    }
+
+    // 回帰検出閾値
     assert!(
         sentence_accuracy >= 40.0,
         "文一致率 {sentence_accuracy:.1}% が最低40%を下回っている (回帰)"
@@ -178,25 +419,22 @@ fn test_accuracy_clause_level() {
         }
     };
 
-    // 文節レベルでの精度テスト: N-best の候補に正解が含まれるか
     let corpus = test_corpus();
     let mut top1_match = 0;
     let mut top5_match = 0;
     let total = corpus.len();
 
-    for (input, expected) in &corpus {
-        let result = jamo_core::convert_nbest(input, &dict, &dict, 5);
+    for tc in &corpus {
+        let result = jamo_core::convert_nbest(tc.input, &dict, &dict, 5);
         let actual: String = result.segments.iter().map(|s| s.surface.as_str()).collect();
 
-        if actual == *expected {
+        if actual == tc.expected {
             top1_match += 1;
             top5_match += 1;
         } else {
-            // 各文節の候補に正解が含まれるかチェック
-            // (簡易: 全文節の候補の組み合わせは見ず、部分一致でカウント)
             let clause_surfaces: String =
                 result.clauses.iter().map(|c| c.surface.as_str()).collect();
-            if clause_surfaces == *expected {
+            if clause_surfaces == tc.expected {
                 top1_match += 1;
                 top5_match += 1;
             }

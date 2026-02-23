@@ -177,3 +177,10 @@
 - よかったこと: 変換レイテンシ: 短文10µs, 中文87µs, 長文99µs, 複雑123µs。prefix_search 1-2µs。辞書ロード 64ms。十分なパフォーマンス。
 - 判断: criterion の html_reports feature で詳細なレポート出力。辞書が見つからない場合はスキップ。
 - 残課題: メモリ使用量計測。regression detection (CI統合)。
+
+### T051: 精度評価基盤 ✓ (2026-02-24)
+- やったこと: T030 の精度テストをカテゴリ別評価に拡充。10カテゴリ (NounPhrase, Adjective, VerbConjugation, Polite, Daily, Place, Time, Complex, ShortVerb, ShortNoun) に分類。カテゴリ別の正解率を出力。
+- 変更したファイル: jamo-core/tests/accuracy_test.rs
+- よかったこと: カテゴリ別精度で弱点が明確に: VerbConjugation/Place/Time は 100%、Adjective 0%、ShortNoun 30%。カタカナ変換の問題が主要な失敗パターン。
+- 判断: Category enum で構造化。テストケースを TestCase struct に統一。既存の回帰閾値 (文一致≥40%, 文字精度≥60%) は維持。
+- 残課題: カテゴリ別の回帰検出。コーパス拡充。
