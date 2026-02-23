@@ -31,7 +31,7 @@
 | T052 NEologd | 完了 | load_merge + dict merge CLI |
 | T053 API仕様 | 完了 | OpenAPI 3.0.3, doc/api.yaml |
 | T054 辞書フォーマット | 完了 | doc/dict-format.md, v2 |
-| T055 ドキュメント | 未着手 | |
+| T055 ドキュメント | 完了 | README.md |
 | T056 1.0 リリース | 未着手 | |
 
 ## パフォーマンス
@@ -70,4 +70,4 @@
 ## 残タスク
 
 - Iter 2 残: T022 bigram LM (精度改善の鍵)
-- Iter 4 残: T055 ドキュメント, T056 1.0リリース
+- Iter 4 残: T056 1.0リリース

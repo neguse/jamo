@@ -205,3 +205,10 @@
 - よかったこと: NEologd等のCSVはIPAdicと同一形式なので、既存パーサーをそのまま再利用。matrix.defはベースを使用するため品詞IDの整合性が保たれる。load()も内部でparse_csv_dir/build_from_entriesを再利用し重複なし。
 - 判断: merge専用の別メソッドにした。load()のシグネチャ変更は既存テストへの影響大。追加CSV側にmatrix.defは不要(ベースを使用)。
 - 残課題: NEologd CSV の自動ダウンロード/ビルドスクリプト。
+
+### T055: ドキュメント ✓ (2026-02-24)
+- やったこと: README.md を作成。クイックスタート (ビルド・CLI変換・HTTPサーバー・辞書マージ)、HTTP APIリファレンス、WASM/C API/CF Workers デプロイ手順、プロジェクト構成、パフォーマンス表を記載。
+- 変更したファイル: README.md (新規)
+- よかったこと: 既存の doc/api.yaml, doc/dict-format.md への参照で詳細は委譲し、README は概要+クイックスタートに集中。
+- 判断: README 1ファイルに集約。APIガイド・辞書ビルドガイドは README のセクションとして十分な粒度で記載し、別ファイルにはしない。
+- 残課題: CONTRIBUTING.md (コントリビューションガイド)。
