@@ -37,3 +37,10 @@
 - よかったこと: ends_at[byte_pos] でノードを管理する設計がシンプルで正しく動いた。BOS/EOSを通常ノードと同じ構造にしたので特殊処理が少ない。
 - 判断: 接続コストは Iter 1 では固定0。品詞接続で「天気」vs「天+木」の問題が出るが、Iter 2 で対応。Lattice を mutable で渡す設計は Viterbi のコスト書き込みのため。
 - 残課題: 接続コスト行列なし。N-best なし。文節伸縮なし。
+
+### T012: jamo convert CLI ✓ (2026-02-24)
+- やったこと: `jamo convert <text>` サブコマンド実装。CLI結合テスト3件。
+- 変更したファイル: jamo-cli/src/main.rs, jamo-cli/tests/cli_test.rs
+- よかったこと: env!("CARGO_BIN_EXE_jamo-cli") でバイナリパスを取得してサブプロセステストが簡潔に書ける。
+- 判断: clap は入れずに std::env::args で十分。Iter 1 では最小限。
+- 残課題: サブコマンド体系 (dict, serve) は後続タスク。
