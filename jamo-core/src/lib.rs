@@ -27,6 +27,17 @@ pub fn convert_with_conn(
     viterbi::decode(&mut lat, input, conn)
 }
 
+/// かな文字列を変換する (N-best 候補付き)
+pub fn convert_nbest(
+    input: &str,
+    dict: &dyn Dictionary,
+    conn: &dyn ConnectionCost,
+    n: usize,
+) -> ConvertResult {
+    let mut lat = lattice::Lattice::build(input, dict);
+    viterbi::decode_nbest(&mut lat, input, conn, n)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

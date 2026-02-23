@@ -93,3 +93,10 @@
 - よかったこと: CSV ロード 3.76秒 → バイナリロード 0.19秒 (約20倍高速化)。バイナリサイズ 18.8MB。BitVec は blocks+len だけ保存して rank テーブルは再構築。
 - 判断: リトルエンディアン固定。magic "JAMO" + version 1 のヘッダ。terminal は u32::MAX をセンチネルに。エントリの surface は可変長 (u16 length prefix)。mmap は将来課題。
 - 残課題: バイナリサイズ 18.8MB は大きい (接続コスト行列だけで 3.5MB)。圧縮やエントリのデデュプは後のIter。
+
+### T029: N-best 候補 ✓ (2026-02-24)
+- やったこと: Segment に candidates フィールド追加。decode_nbest() で Viterbi 最適パスの各セグメントに対し、同区間の全候補を word_cost 順に返す。convert_nbest() トップレベル API。HTTP API の n パラメータが実際に機能するように更新。7テスト (既存4+新規3)。
+- 変更したファイル: jamo-core/src/viterbi.rs, jamo-core/src/lib.rs, jamo-cli/src/serve.rs
+- よかったこと: Viterbi の forward pass はそのまま。候補収集はラティスの ends_at[end] を走査するだけで追加コスト最小。API の `candidates: vec![s.surface.clone()]` を `s.candidates.clone()` に変えるだけで HTTP 側も完了。
+- 判断: 「同じ区間の候補」方式 (各セグメントの読みが同じ他の表層形を列挙)。フルパス N-best (異なるセグメンテーション) は複雑なので見送り。surface は Viterbi 選択のものを使い、candidates の先頭に配置。
+- 残課題: フルパス N-best は未対応。

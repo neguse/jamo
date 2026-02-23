@@ -36,16 +36,14 @@ async fn handle_convert(
     State(dict): State<Arc<IpaDict>>,
     Query(params): Query<ConvertParams>,
 ) -> impl IntoResponse {
-    let result = jamo_core::convert_with_conn(&params.q, dict.as_ref(), dict.as_ref());
-
-    let _ = params.n; // N-best は後のIter
+    let result = jamo_core::convert_nbest(&params.q, dict.as_ref(), dict.as_ref(), params.n);
 
     let segments: Vec<SegmentResponse> = result
         .segments
         .iter()
         .map(|s| SegmentResponse {
             yomi: s.yomi.clone(),
-            candidates: vec![s.surface.clone()],
+            candidates: s.candidates.clone(),
         })
         .collect();
 
