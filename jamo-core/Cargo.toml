@@ -11,5 +11,12 @@ wasm-bindgen = { version = "0.2", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[[bench]]
+name = "convert_bench"
+harness = false

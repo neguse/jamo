@@ -170,3 +170,10 @@
 - よかったこと: Map<domain, WasmEngine> でドメインごとにキャッシュする設計がシンプル。WASM 初期化は1回で済み、辞書のみドメインごとにロード。
 - 判断: デフォルトは "ipadic"。R2 のキー命名は `{domain}.dict`。ドメイン辞書の作成自体はユーザー側の責任 (jamo dict build + R2 アップロード)。
 - 残課題: ドメイン辞書の管理 API (一覧・削除)。
+
+### T050: ベンチマークスイート ✓ (2026-02-24)
+- やったこと: criterion ベンチマーク。convert (short/medium/long/complex)、dict_load、prefix_search (1/2/3char) の3グループ。
+- 変更したファイル: jamo-core/Cargo.toml, jamo-core/benches/convert_bench.rs (新規)
+- よかったこと: 変換レイテンシ: 短文10µs, 中文87µs, 長文99µs, 複雑123µs。prefix_search 1-2µs。辞書ロード 64ms。十分なパフォーマンス。
+- 判断: criterion の html_reports feature で詳細なレポート出力。辞書が見つからない場合はスキップ。
+- 残課題: メモリ使用量計測。regression detection (CI統合)。
