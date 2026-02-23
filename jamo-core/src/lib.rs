@@ -41,6 +41,12 @@ pub fn convert_nbest(
 /// 文節グルーピングのみ (テスト用に公開)
 pub use viterbi::group_clauses;
 
+/// 文節境界を調整する
+pub use viterbi::resize_boundaries;
+
+/// 文節境界を指定して変換する
+pub use viterbi::convert_with_boundaries;
+
 #[cfg(test)]
 mod tests {
     use super::*;

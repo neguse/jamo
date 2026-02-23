@@ -107,3 +107,10 @@
 - よかったこと: 品詞分類のルールがシンプル (助詞/助動詞/非自立→Function, それ以外→Content)。group_clauses() はセグメント列の後処理で、Viterbi 本体に手を入れずに済んだ。
 - 判断: 品詞タイプは2値 (Content/Function) で十分。接頭詞は Content 扱い (新文節開始)。文節候補は単語代替の組み合わせ方式 (再Viterbi方式は複雑なので見送り)。バイナリ v2 で後方互換を切った (pre-1.0)。
 - 残課題: 文節伸縮 (T028) 未実装。フルパス N-best による文節候補は未対応。
+
+### T028: 文節伸縮 ✓ (2026-02-24)
+- やったこと: resize_boundaries() で文節境界を文字単位で伸縮。convert_with_boundaries() で文節境界を指定して変換。HTTP API に GET /resize エンドポイント追加。伸ばして次の文節がなくなる場合は統合。5テスト新規 (resize_extend, resize_shrink, resize_boundary_limits, convert_with_boundaries, resize_and_reconvert)。
+- 変更したファイル: jamo-core/src/viterbi.rs, jamo-core/src/lib.rs, jamo-cli/src/serve.rs
+- よかったこと: boundaries (バイト位置配列) をクライアントとやり取りする設計がシンプル。各文節を独立に Viterbi 変換するのでパフォーマンスもよい。
+- 判断: 文字単位の伸縮 (ひらがな1文字=3バイト)。最後の文節は伸縮不可 (入力末尾に固定)。文節が完全に吸収される場合は統合 (boundary を remove)。
+- 残課題: フルパス N-best 未対応。

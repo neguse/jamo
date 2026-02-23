@@ -22,7 +22,7 @@
 | T025 LOUDS trie | 完了 | バイト単位 trie, 10テスト |
 | T026 HashMap差替 | 完了 | IpaDict 内部を LOUDS に |
 | T027 連文節変換 | 完了 | pos_type分類, group_clauses, 6テスト |
-| T028 文節伸縮 | 未着手 | |
+| T028 文節伸縮 | 完了 | resize_boundaries, convert_with_boundaries, 5テスト |
 | T029 N-best | 完了 | 各セグメントの候補一覧, 3テスト追加 |
 | T030 精度テスト | 未着手 | |
 
@@ -42,7 +42,7 @@
 
 ## テスト
 
-全57テスト通過 (jamo-core: 51, jamo-cli: 4 CLI + 2 HTTP)
+全62テスト通過 (jamo-core: 56, jamo-cli: 4 CLI + 2 HTTP)
 
 ## 次のアクション
 

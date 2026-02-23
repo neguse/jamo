@@ -220,6 +220,130 @@ pub fn group_clauses(segments: &[Segment]) -> Vec<Clause> {
         .collect()
 }
 
+/// 文節境界を調整する (伸縮)
+/// clause_idx: 伸縮する文節のインデックス
+/// delta: +N で文字数分伸ばす (右に境界を移動), -N で縮める (左に境界を移動)
+/// 戻り値: 新しい文節境界バイト位置のリスト (不正な操作の場合は None)
+pub fn resize_boundaries(
+    input: &str,
+    boundaries: &[usize],
+    clause_idx: usize,
+    delta: i32,
+) -> Option<Vec<usize>> {
+    if clause_idx >= boundaries.len() || boundaries.is_empty() {
+        return None;
+    }
+
+    // 最後の境界は入力末尾に固定
+    if clause_idx == boundaries.len() - 1 {
+        return None; // 最後の文節は伸縮不可
+    }
+
+    let current = boundaries[clause_idx];
+    let next = boundaries[clause_idx + 1];
+    let prev_start = if clause_idx > 0 {
+        boundaries[clause_idx - 1]
+    } else {
+        0
+    };
+
+    let new_pos = if delta > 0 {
+        // 伸ばす: 次の文節の先頭から delta 文字分を奪う
+        let remaining = &input[current..next];
+        let char_count = remaining.chars().count();
+        let move_count = delta as usize;
+        if move_count >= char_count {
+            // 次の文節を完全に吸収 → 境界を削除して統合
+            let mut new_boundaries = boundaries.to_vec();
+            new_boundaries.remove(clause_idx);
+            return Some(new_boundaries);
+        }
+        remaining
+            .char_indices()
+            .nth(move_count)
+            .map(|(offset, _)| current + offset)
+            .unwrap_or(next)
+    } else {
+        // 縮める: 現在の文節の末尾から |delta| 文字分を次の文節に渡す
+        let clause_reading = &input[prev_start..current];
+        let char_positions: Vec<usize> = clause_reading
+            .char_indices()
+            .map(|(offset, _)| prev_start + offset)
+            .collect();
+        let move_count = (-delta) as usize;
+        if move_count >= char_positions.len() {
+            return None; // 現在の文節がなくなる
+        }
+        char_positions[char_positions.len() - move_count]
+    };
+
+    let mut new_boundaries = boundaries.to_vec();
+    new_boundaries[clause_idx] = new_pos;
+    Some(new_boundaries)
+}
+
+/// 文節境界を指定して変換する
+/// boundaries: 各文節の読みの終了バイト位置 (最後は input.len())
+pub fn convert_with_boundaries(
+    input: &str,
+    boundaries: &[usize],
+    dict: &dyn crate::dict::Dictionary,
+    conn: &dyn ConnectionCost,
+    n: usize,
+) -> ConvertResult {
+    let mut all_segments = Vec::new();
+    let mut all_clauses = Vec::new();
+
+    let mut start = 0;
+    for &end in boundaries {
+        let sub_input = &input[start..end];
+        if sub_input.is_empty() {
+            start = end;
+            continue;
+        }
+
+        let mut lat = Lattice::build(sub_input, dict);
+        let sub_result = decode_nbest(&mut lat, sub_input, conn, n);
+
+        // この範囲の全セグメントを1文節にまとめる
+        let surface: String = sub_result
+            .segments
+            .iter()
+            .map(|s| s.surface.as_str())
+            .collect();
+        let yomi = sub_input.to_string();
+
+        // 文節候補: 内部文節の組み合わせから生成
+        let mut candidates = vec![surface.clone()];
+        for clause in &sub_result.clauses {
+            for alt in clause.candidates.iter().skip(1) {
+                if !candidates.contains(alt) {
+                    candidates.push(alt.clone());
+                }
+            }
+        }
+
+        // セグメントの yomi をオフセット調整 (元の入力での位置に)
+        for mut seg in sub_result.segments {
+            seg.yomi = input[start..start + seg.yomi.len()].to_string();
+            all_segments.push(seg);
+        }
+
+        all_clauses.push(Clause {
+            surface,
+            yomi,
+            candidates,
+        });
+
+        start = end;
+    }
+
+    ConvertResult {
+        segments: all_segments,
+        clauses: all_clauses,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,5 +522,87 @@ mod tests {
 
         assert_eq!(result.clauses.len(), 1);
         assert_eq!(result.clauses[0].surface, "今日");
+    }
+
+    #[test]
+    fn test_resize_extend() {
+        // 「きょうは」(12 bytes) を境界 [9, 12] (きょう|は) で分割
+        // clause 0 を 1文字伸ばす → 次の文節「は」(1文字) を完全吸収 → [12] (1文節)
+        let input = "きょうは"; // 12 bytes
+        let boundaries = vec![9, 12]; // きょう(9) | は(3)
+        let result = resize_boundaries(input, &boundaries, 0, 1);
+        assert_eq!(result, Some(vec![12]));
+    }
+
+    #[test]
+    fn test_resize_shrink() {
+        // 「きょうは」境界 [12] (1文節) を 1文字縮める
+        // → [9, 12] (きょう|は)
+        let input = "きょうは"; // 12 bytes
+        let boundaries = vec![9, 12]; // きょう | は
+        let result = resize_boundaries(input, &boundaries, 0, -1);
+        // 「きょう」→ 3文字, -1 で 2文字 = 6 bytes (きょ)
+        assert_eq!(result, Some(vec![6, 12]));
+    }
+
+    #[test]
+    fn test_resize_boundary_limits() {
+        let input = "きょうは"; // 12 bytes
+        // 1文字文節は縮められない (なくなるため)
+        let boundaries = vec![3, 12]; // き | ょうは
+        let result = resize_boundaries(input, &boundaries, 0, -1);
+        assert_eq!(result, None);
+
+        // 最後の文節は伸縮不可
+        let boundaries = vec![9, 12];
+        let result = resize_boundaries(input, &boundaries, 1, 1);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_convert_with_boundaries() {
+        // 「きょうは」を文節境界 [9, 12] で変換 → [今日][は]
+        let dict = HashMapDict::test_dict();
+        let input = "きょうは";
+        let boundaries = vec![9, 12];
+        let conn = SimpleConnectionCost;
+        let result = convert_with_boundaries(input, &boundaries, &dict, &conn, 5);
+
+        assert_eq!(result.clauses.len(), 2);
+        assert_eq!(result.clauses[0].yomi, "きょう");
+        assert_eq!(result.clauses[0].surface, "今日");
+        assert_eq!(result.clauses[1].yomi, "は");
+        assert_eq!(result.clauses[1].surface, "は");
+    }
+
+    #[test]
+    fn test_resize_and_reconvert() {
+        // フル変換 → 伸縮 → 再変換 のフロー
+        let dict = HashMapDict::test_dict();
+        let input = "きょうは";
+        let conn = SimpleConnectionCost;
+
+        // 初回変換: 自動文節分割
+        let result = decode_nbest(&mut Lattice::build(input, &dict), input, &conn, 5);
+
+        // 文節境界を取得
+        let mut boundaries: Vec<usize> = Vec::new();
+        let mut pos = 0;
+        for clause in &result.clauses {
+            pos += clause.yomi.len();
+            boundaries.push(pos);
+        }
+        assert_eq!(*boundaries.last().unwrap(), input.len());
+
+        // 文節 0 を縮める
+        if boundaries.len() > 1 {
+            if let Some(new_boundaries) = resize_boundaries(input, &boundaries, 0, -1) {
+                let new_result = convert_with_boundaries(input, &new_boundaries, &dict, &conn, 5);
+
+                // 読みが入力全体をカバー
+                let all_yomi: String = new_result.clauses.iter().map(|c| c.yomi.as_str()).collect();
+                assert_eq!(all_yomi, input);
+            }
+        }
     }
 }
