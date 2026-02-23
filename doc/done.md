@@ -100,3 +100,10 @@
 - よかったこと: Viterbi の forward pass はそのまま。候補収集はラティスの ends_at[end] を走査するだけで追加コスト最小。API の `candidates: vec![s.surface.clone()]` を `s.candidates.clone()` に変えるだけで HTTP 側も完了。
 - 判断: 「同じ区間の候補」方式 (各セグメントの読みが同じ他の表層形を列挙)。フルパス N-best (異なるセグメンテーション) は複雑なので見送り。surface は Viterbi 選択のものを使い、candidates の先頭に配置。
 - 残課題: フルパス N-best は未対応。
+
+### T027: 連文節変換 ✓ (2026-02-24)
+- やったこと: Entry に pos_type (Content/Function) 追加。IPAdic CSV の品詞フィールドから自立語/付属語を分類。Viterbi 結果を文節 (Clause) 単位にグルーピング。文節候補は各単語の代替候補を組み合わせて生成。HTTP API を文節単位のレスポンスに変更。バイナリフォーマット v2 (pos_type 追加)。6テスト新規 (classify_pos, clauses_kyouha, clauses_kyouha_tenki_desune, clauses_candidates, clauses_single_content, clauses_with_ipadic)。
+- 変更したファイル: jamo-core/src/dict.rs, jamo-core/src/lattice.rs, jamo-core/src/viterbi.rs, jamo-core/src/ipadic.rs, jamo-core/src/louds.rs, jamo-core/src/lib.rs, jamo-cli/src/serve.rs
+- よかったこと: 品詞分類のルールがシンプル (助詞/助動詞/非自立→Function, それ以外→Content)。group_clauses() はセグメント列の後処理で、Viterbi 本体に手を入れずに済んだ。
+- 判断: 品詞タイプは2値 (Content/Function) で十分。接頭詞は Content 扱い (新文節開始)。文節候補は単語代替の組み合わせ方式 (再Viterbi方式は複雑なので見送り)。バイナリ v2 で後方互換を切った (pre-1.0)。
+- 残課題: 文節伸縮 (T028) 未実装。フルパス N-best による文節候補は未対応。

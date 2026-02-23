@@ -16,6 +16,7 @@ struct RawEntry {
     right_id: u16,
     cost: i16,
     reading: String,
+    pos_type: u8,
 }
 
 /// IPAdic から構築した辞書
@@ -57,6 +58,7 @@ impl IpaDict {
                 left_id: raw.left_id,
                 right_id: raw.right_id,
                 cost: raw.cost,
+                pos_type: raw.pos_type,
             });
         }
 
@@ -130,7 +132,7 @@ impl IpaDict {
 }
 
 const MAGIC: &[u8; 4] = b"JAMO";
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 fn write_u32(w: &mut impl Write, v: u32) -> io::Result<()> {
     w.write_all(&v.to_le_bytes())
@@ -215,6 +217,7 @@ fn write_binary(
         write_u16(w, e.left_id)?;
         write_u16(w, e.right_id)?;
         write_i16(w, e.cost)?;
+        w.write_all(&[e.pos_type])?;
     }
 
     // Matrix
@@ -286,11 +289,15 @@ fn read_binary(r: &mut impl Read) -> io::Result<IpaDict> {
         let left_id = read_u16(r)?;
         let right_id = read_u16(r)?;
         let cost = read_i16(r)?;
+        let mut pos_buf = [0u8; 1];
+        r.read_exact(&mut pos_buf)?;
+        let pos_type = pos_buf[0];
         entries.push(Entry {
             surface,
             left_id,
             right_id,
             cost,
+            pos_type,
         });
     }
 
@@ -344,9 +351,21 @@ fn katakana_to_hiragana(s: &str) -> String {
         .collect()
 }
 
+/// IPAdic の品詞フィールドから品詞タイプを判定
+fn classify_pos(pos: &str, pos_sub: &str) -> u8 {
+    use crate::dict::{POS_CONTENT, POS_FUNCTION};
+    match pos {
+        "助詞" | "助動詞" => POS_FUNCTION,
+        "名詞" if pos_sub == "接尾" || pos_sub == "非自立" => POS_FUNCTION,
+        "動詞" if pos_sub != "自立" => POS_FUNCTION,
+        "形容詞" if pos_sub != "自立" => POS_FUNCTION,
+        _ => POS_CONTENT,
+    }
+}
+
 /// IPAdic CSV の1行をパース
 fn parse_csv_line(line: &str) -> Option<RawEntry> {
-    // フォーマット: 表層形,left_id,right_id,cost,品詞,...,原形,読み,発音
+    // フォーマット: 表層形,left_id,right_id,cost,品詞,品詞細分類1,...,原形,読み,発音
     let fields: Vec<&str> = line.split(',').collect();
     if fields.len() < 12 {
         return None;
@@ -357,6 +376,7 @@ fn parse_csv_line(line: &str) -> Option<RawEntry> {
     let right_id: u16 = fields[2].parse().ok()?;
     let cost: i16 = fields[3].parse().ok()?;
     let reading = fields[11].to_string(); // 読み (カタカナ)
+    let pos_type = classify_pos(fields[4], fields[5]);
 
     Some(RawEntry {
         surface,
@@ -364,6 +384,7 @@ fn parse_csv_line(line: &str) -> Option<RawEntry> {
         right_id,
         cost,
         reading,
+        pos_type,
     })
 }
 
@@ -509,6 +530,54 @@ mod tests {
             "「今日」が候補にあるはず: {:?}",
             surfaces
         );
+    }
+
+    #[test]
+    fn test_clauses_with_ipadic() {
+        let ipadic_dir = Path::new("../data/ipadic");
+        if !ipadic_dir.exists() {
+            eprintln!("Skipping: IPAdic not found");
+            return;
+        }
+
+        let dict = IpaDict::load(ipadic_dir).expect("failed to load IPAdic");
+        let result = crate::convert_nbest("わたしはがくせいです", &dict, &dict, 5);
+
+        let clause_surfaces: Vec<&str> =
+            result.clauses.iter().map(|c| c.surface.as_str()).collect();
+        let clause_yomis: Vec<&str> = result.clauses.iter().map(|c| c.yomi.as_str()).collect();
+        eprintln!("文節: {clause_surfaces:?}");
+        eprintln!("読み: {clause_yomis:?}");
+
+        // 読みが入力全体をカバー
+        let all_yomi: String = result.clauses.iter().map(|c| c.yomi.as_str()).collect();
+        assert_eq!(all_yomi, "わたしはがくせいです");
+
+        // 文節数は単語数より少ないはず (助詞・助動詞がまとまる)
+        assert!(
+            result.clauses.len() < result.segments.len(),
+            "文節数 ({}) < 単語数 ({}) のはず",
+            result.clauses.len(),
+            result.segments.len()
+        );
+    }
+
+    #[test]
+    fn test_classify_pos() {
+        use crate::dict::{POS_CONTENT, POS_FUNCTION};
+        assert_eq!(classify_pos("名詞", "一般"), POS_CONTENT);
+        assert_eq!(classify_pos("名詞", "接尾"), POS_FUNCTION);
+        assert_eq!(classify_pos("名詞", "非自立"), POS_FUNCTION);
+        assert_eq!(classify_pos("動詞", "自立"), POS_CONTENT);
+        assert_eq!(classify_pos("動詞", "非自立"), POS_FUNCTION);
+        assert_eq!(classify_pos("動詞", "接尾"), POS_FUNCTION);
+        assert_eq!(classify_pos("形容詞", "自立"), POS_CONTENT);
+        assert_eq!(classify_pos("形容詞", "非自立"), POS_FUNCTION);
+        assert_eq!(classify_pos("助詞", "格助詞"), POS_FUNCTION);
+        assert_eq!(classify_pos("助動詞", "*"), POS_FUNCTION);
+        assert_eq!(classify_pos("副詞", "一般"), POS_CONTENT);
+        assert_eq!(classify_pos("接続詞", "*"), POS_CONTENT);
+        assert_eq!(classify_pos("接頭詞", "名詞接続"), POS_CONTENT);
     }
 
     #[test]

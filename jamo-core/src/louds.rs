@@ -248,6 +248,7 @@ mod tests {
             left_id: 0,
             right_id: 0,
             cost,
+            pos_type: 0,
         }
     }
 

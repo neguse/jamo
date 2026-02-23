@@ -1,5 +1,10 @@
 use std::collections::HashMap;
 
+/// 品詞タイプ: 自立語 (文節の先頭になれる)
+pub const POS_CONTENT: u8 = 0;
+/// 品詞タイプ: 付属語 (前の自立語に付く)
+pub const POS_FUNCTION: u8 = 1;
+
 /// 辞書エントリ
 #[derive(Debug, Clone)]
 pub struct Entry {
@@ -11,6 +16,8 @@ pub struct Entry {
     pub right_id: u16,
     /// 単語コスト (低いほど出やすい)
     pub cost: i16,
+    /// 品詞タイプ (POS_CONTENT or POS_FUNCTION)
+    pub pos_type: u8,
 }
 
 /// 辞書の共通インターフェース
@@ -39,7 +46,15 @@ impl HashMapDict {
         }
     }
 
-    pub fn add(&mut self, yomi: &str, surface: &str, left_id: u16, right_id: u16, cost: i16) {
+    pub fn add(
+        &mut self,
+        yomi: &str,
+        surface: &str,
+        left_id: u16,
+        right_id: u16,
+        cost: i16,
+        pos_type: u8,
+    ) {
         self.entries
             .entry(yomi.to_string())
             .or_default()
@@ -48,6 +63,7 @@ impl HashMapDict {
                 left_id,
                 right_id,
                 cost,
+                pos_type,
             });
     }
 
@@ -55,17 +71,18 @@ impl HashMapDict {
     pub fn test_dict() -> Self {
         let mut dict = Self::new();
         // 品詞ID: 0=名詞, 1=助詞, 2=形容詞, 3=動詞, 4=助動詞, 5=接尾辞
-        dict.add("きょう", "今日", 0, 0, -3000);
-        dict.add("きょう", "京", 0, 0, -2000);
-        dict.add("き", "木", 0, 0, -2500);
-        dict.add("は", "は", 1, 1, -3000);
-        dict.add("いい", "いい", 2, 2, -3000);
-        dict.add("いい", "良い", 2, 2, -2500);
-        dict.add("てんき", "天気", 0, 0, -3500);
-        dict.add("てん", "天", 0, 0, -2000);
-        dict.add("き", "気", 0, 0, -2000);
-        dict.add("です", "です", 4, 4, -3000);
-        dict.add("ね", "ね", 1, 1, -2500);
+        // C=Content(自立語), F=Function(付属語)
+        dict.add("きょう", "今日", 0, 0, -3000, POS_CONTENT);
+        dict.add("きょう", "京", 0, 0, -2000, POS_CONTENT);
+        dict.add("き", "木", 0, 0, -2500, POS_CONTENT);
+        dict.add("は", "は", 1, 1, -3000, POS_FUNCTION);
+        dict.add("いい", "いい", 2, 2, -3000, POS_CONTENT);
+        dict.add("いい", "良い", 2, 2, -2500, POS_CONTENT);
+        dict.add("てんき", "天気", 0, 0, -3500, POS_CONTENT);
+        dict.add("てん", "天", 0, 0, -2000, POS_CONTENT);
+        dict.add("き", "気", 0, 0, -2000, POS_CONTENT);
+        dict.add("です", "です", 4, 4, -3000, POS_FUNCTION);
+        dict.add("ね", "ね", 1, 1, -2500, POS_FUNCTION);
         dict
     }
 }

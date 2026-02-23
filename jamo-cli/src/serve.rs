@@ -23,11 +23,11 @@ fn default_n() -> usize {
 
 #[derive(Serialize)]
 struct ConvertResponse {
-    result: Vec<SegmentResponse>,
+    result: Vec<ClauseResponse>,
 }
 
 #[derive(Serialize)]
-struct SegmentResponse {
+struct ClauseResponse {
     yomi: String,
     candidates: Vec<String>,
 }
@@ -38,16 +38,16 @@ async fn handle_convert(
 ) -> impl IntoResponse {
     let result = jamo_core::convert_nbest(&params.q, dict.as_ref(), dict.as_ref(), params.n);
 
-    let segments: Vec<SegmentResponse> = result
-        .segments
+    let clauses: Vec<ClauseResponse> = result
+        .clauses
         .iter()
-        .map(|s| SegmentResponse {
-            yomi: s.yomi.clone(),
-            candidates: s.candidates.clone(),
+        .map(|c| ClauseResponse {
+            yomi: c.yomi.clone(),
+            candidates: c.candidates.clone(),
         })
         .collect();
 
-    Json(ConvertResponse { result: segments })
+    Json(ConvertResponse { result: clauses })
 }
 
 async fn handle_health() -> impl IntoResponse {

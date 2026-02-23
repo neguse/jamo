@@ -15,6 +15,8 @@ pub struct Node {
     pub right_id: u16,
     /// 単語コスト
     pub word_cost: i32,
+    /// 品詞タイプ (POS_CONTENT or POS_FUNCTION)
+    pub pos_type: u8,
     /// Viterbi累積コスト (デコード時に設定)
     pub total_cost: i32,
     /// 最適前ノードのインデックス (デコード時に設定)
@@ -47,6 +49,7 @@ impl Lattice {
             left_id: 0,
             right_id: 0,
             word_cost: 0,
+            pos_type: 0,
             total_cost: 0,
             prev: None,
         });
@@ -67,6 +70,7 @@ impl Lattice {
                         left_id: entry.left_id,
                         right_id: entry.right_id,
                         word_cost: entry.cost as i32,
+                        pos_type: entry.pos_type,
                         total_cost: i32::MAX,
                         prev: None,
                     });
@@ -84,6 +88,7 @@ impl Lattice {
             left_id: 0,
             right_id: 0,
             word_cost: 0,
+            pos_type: 0,
             total_cost: i32::MAX,
             prev: None,
         });

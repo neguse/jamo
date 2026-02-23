@@ -38,6 +38,9 @@ pub fn convert_nbest(
     viterbi::decode_nbest(&mut lat, input, conn, n)
 }
 
+/// 文節グルーピングのみ (テスト用に公開)
+pub use viterbi::group_clauses;
+
 #[cfg(test)]
 mod tests {
     use super::*;
