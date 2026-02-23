@@ -43,6 +43,16 @@ export class JamoEngine implements DurableObject {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
+    // WebSocket upgrade
+    if (url.pathname === "/ws") {
+      if (request.headers.get("Upgrade") !== "websocket") {
+        return jsonResponse({ error: "expected websocket" }, 426);
+      }
+      const pair = new WebSocketPair();
+      this.state.acceptWebSocket(pair[1]);
+      return new Response(null, { status: 101, webSocket: pair[0] });
+    }
+
     try {
       switch (url.pathname) {
         case "/convert":
@@ -56,6 +66,47 @@ export class JamoEngine implements DurableObject {
       const message = e instanceof Error ? e.message : String(e);
       return jsonResponse({ error: message }, 500);
     }
+  }
+
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    if (typeof message !== "string") {
+      ws.send(JSON.stringify({ error: "binary messages not supported" }));
+      return;
+    }
+
+    try {
+      const msg = JSON.parse(message);
+      const id = msg.id;
+      const engine = await this.ensureEngine();
+
+      switch (msg.type) {
+        case "convert": {
+          const resultJson = engine.convert(msg.q ?? "", msg.n ?? 5);
+          ws.send(JSON.stringify({ id, ...JSON.parse(resultJson) }));
+          break;
+        }
+        case "resize": {
+          const resultJson = engine.resize(
+            msg.q ?? "",
+            JSON.stringify(msg.boundaries ?? []),
+            msg.clause ?? 0,
+            msg.delta ?? 0,
+            msg.n ?? 5
+          );
+          ws.send(JSON.stringify({ id, ...JSON.parse(resultJson) }));
+          break;
+        }
+        default:
+          ws.send(JSON.stringify({ id, error: "unknown type" }));
+      }
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      ws.send(JSON.stringify({ error }));
+    }
+  }
+
+  async webSocketClose(ws: WebSocket): Promise<void> {
+    ws.close();
   }
 
   private async handleConvert(url: URL): Promise<Response> {

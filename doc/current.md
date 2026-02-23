@@ -16,7 +16,7 @@
 |--------|------|------|
 | T041 CF Worker | 完了 | ルーター + Bearer認証 → DO ルーティング |
 | T042 Durable Object | 完了 | WASM統合 + R2辞書ロード, wrangler dry-run OK |
-| T043 WebSocket | 未着手 | |
+| T043 WebSocket | 完了 | /ws エンドポイント, JSON メッセージ, Hibernation API |
 | T044 学習テーブル | 未着手 | |
 
 ## 確認済みの動作 (IPAdic + LOUDS + バイナリ)
@@ -31,7 +31,7 @@
 
 - wasm-pack ビルド: 144KB WASM バイナリ
 - wrangler dry-run: 157KB バンドル (WASM含む)
-- DO: R2 から辞書ロード (lazy init)、/convert + /resize エンドポイント
+- DO: R2 から辞書ロード (lazy init)、/convert + /resize + /ws エンドポイント
 - デプロイ未実施 (R2バケット作成 + 辞書アップロードが必要)
 
 ## 既知の問題
@@ -46,4 +46,4 @@
 ## 次のアクション
 
 Iter 2 残: T022 bigram LM (精度改善)
-Iter 3 続: T043 WebSocket
+Iter 3 続: T044 学習テーブル / T045 ユーザー辞書 API

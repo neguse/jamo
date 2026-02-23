@@ -127,4 +127,11 @@
 - 変更したファイル: jamo-core/Cargo.toml, jamo-core/src/lib.rs, jamo-core/src/ipadic.rs, jamo-core/src/wasm.rs (新規), jamo-worker/ (新規: index.ts, do.ts, wrangler.toml, tsconfig.json, package.json, wasm.d.ts)
 - よかったこと: wasm-pack --target web で 144KB の WASM バイナリ。wrangler dry-run で 157KB バンドル。CF Workers から .wasm を直接 import して init() に渡す方式が動作。
 - 判断: Durable Object でユーザーごとにエンジンインスタンスを分離。辞書は R2 バケットに格納し、DO 初回リクエスト時にロード (lazy init)。認証は簡易実装 (Bearer トークン = user_id)。
-- 残課題: wrangler deploy (R2バケット作成+辞書アップロード要)。WebSocket (T043)。SQLite ユーザー辞書 (T044)。
+- 残課題: wrangler deploy (R2バケット作成+辞書アップロード要)。SQLite ユーザー辞書 (T044)。
+
+### T043: WebSocket ✓ (2026-02-24)
+- やったこと: Durable Object に WebSocket エンドポイント (/ws) 追加。state.acceptWebSocket() で CF の Hibernation API 対応。JSON メッセージで convert/resize をリアルタイム処理。リクエスト ID で応答を対応付け。
+- 変更したファイル: jamo-worker/src/do.ts
+- よかったこと: Durable Object の webSocketMessage/webSocketClose ハンドラで WebSocket ライフサイクルが簡潔に実装できた。HTTP と WebSocket で同じ ensureEngine() を共有。
+- 判断: メッセージ形式は `{ type: "convert"|"resize", id?: string, ... }`。id フィールドでリクエスト・レスポンスの対応付け。バイナリメッセージは非サポート (テキスト JSON のみ)。
+- 残課題: 再接続時の状態復元。heartbeat/ping-pong。
