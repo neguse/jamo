@@ -1,3 +1,6 @@
+#[cfg(feature = "wasm")]
+pub mod wasm;
+
 pub mod bitvec;
 pub mod dict;
 pub mod ipadic;

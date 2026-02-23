@@ -1,3 +1,6 @@
 /target
 /data/ipadic/
 *.dict
+jamo-core/pkg/
+jamo-worker/node_modules/
+jamo-worker/dist/

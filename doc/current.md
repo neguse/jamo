@@ -7,24 +7,17 @@
 | 0 | 完了 | 足場 |
 | 1 | ほぼ完了 | 針金 (最薄E2E) |
 | 2 | ほぼ完了 | 実データ |
-| 3 | - | 運用 |
+| 3 | 進行中 | 運用 |
 | 4 | - | 品質→1.0 |
 
-## Iter 2 進捗
+## Iter 3 進捗
 
 | タスク | 状態 | 備考 |
 |--------|------|------|
-| T020 IPAdic パース | 完了 | 39万エントリ, 接続コスト行列, 21テスト |
-| T021 CLI/HTTP接続 | 完了 | --dict オプション, Arc共有 |
-| T022 bigram LM | 未着手 | |
-| T023 辞書バイナリ化 | 完了 | CSV 3.76s → bin 0.19s, 18.8MB |
-| T024 ビットベクトル | 完了 | rank/select O(1), 11テスト |
-| T025 LOUDS trie | 完了 | バイト単位 trie, 10テスト |
-| T026 HashMap差替 | 完了 | IpaDict 内部を LOUDS に |
-| T027 連文節変換 | 完了 | pos_type分類, group_clauses, 6テスト |
-| T028 文節伸縮 | 完了 | resize_boundaries, convert_with_boundaries, 5テスト |
-| T029 N-best | 完了 | 各セグメントの候補一覧, 3テスト追加 |
-| T030 精度テスト | 完了 | 52文コーパス, 文一致 48.1%, 文字精度 69.1% |
+| T041 CF Worker | 完了 | ルーター + Bearer認証 → DO ルーティング |
+| T042 Durable Object | 完了 | WASM統合 + R2辞書ロード, wrangler dry-run OK |
+| T043 WebSocket | 未着手 | |
+| T044 学習テーブル | 未着手 | |
 
 ## 確認済みの動作 (IPAdic + LOUDS + バイナリ)
 
@@ -34,10 +27,16 @@
 にほんごをべんきょうする → 日本語を勉強する
 ```
 
+## WASM + CF Worker
+
+- wasm-pack ビルド: 144KB WASM バイナリ
+- wrangler dry-run: 157KB バンドル (WASM含む)
+- DO: R2 から辞書ロード (lazy init)、/convert + /resize エンドポイント
+- デプロイ未実施 (R2バケット作成 + 辞書アップロードが必要)
+
 ## 既知の問題
 
 - 「きょう」→「教」（「今日」が期待値）— 接続コストの精度限界
-- WASM ビルド未着手 (wasm-pack 未インストール)
 - バイナリ辞書 19.2MB (v2, pos_type追加)
 
 ## テスト
@@ -47,4 +46,4 @@
 ## 次のアクション
 
 Iter 2 残: T022 bigram LM (精度改善)
-Iter 3 開始: T041 CF Worker / T042 Durable Object
+Iter 3 続: T043 WebSocket

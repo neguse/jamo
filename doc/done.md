@@ -121,3 +121,10 @@
 - よかったこと: ベースライン計測で改善すべき点が明確になった。短い単語 (2-3文字) が特に弱い。文としては半分弱が正解。
 - 判断: 文一致率 48.1%、文字精度 69.1% (IPAdic + Viterbi, bigram LM なし)。閾値は文一致率 40%、文字精度 60% (回帰検出用)。短い単語の精度が低いのは接続コスト行列だけでは文脈が不足するため。
 - 残課題: bigram LM (T022) で精度改善。コーパス拡充。
+
+### T041/T042: CF Worker + Durable Object ✓ (2026-02-24)
+- やったこと: jamo-core に wasm feature 追加 (wasm-bindgen, serde, serde_json)。JamoEngine WASM バインディング (convert, resize)。jamo-worker/ プロジェクト新規作成: CF Worker ルーター + Durable Object (WASM エンジン + R2 辞書ロード)。
+- 変更したファイル: jamo-core/Cargo.toml, jamo-core/src/lib.rs, jamo-core/src/ipadic.rs, jamo-core/src/wasm.rs (新規), jamo-worker/ (新規: index.ts, do.ts, wrangler.toml, tsconfig.json, package.json, wasm.d.ts)
+- よかったこと: wasm-pack --target web で 144KB の WASM バイナリ。wrangler dry-run で 157KB バンドル。CF Workers から .wasm を直接 import して init() に渡す方式が動作。
+- 判断: Durable Object でユーザーごとにエンジンインスタンスを分離。辞書は R2 バケットに格納し、DO 初回リクエスト時にロード (lazy init)。認証は簡易実装 (Bearer トークン = user_id)。
+- 残課題: wrangler deploy (R2バケット作成+辞書アップロード要)。WebSocket (T043)。SQLite ユーザー辞書 (T044)。

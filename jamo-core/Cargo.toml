@@ -3,4 +3,13 @@ name = "jamo-core"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+wasm = ["wasm-bindgen", "serde", "serde_json"]
+
 [dependencies]
+wasm-bindgen = { version = "0.2", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
+[lib]
+crate-type = ["cdylib", "rlib"]

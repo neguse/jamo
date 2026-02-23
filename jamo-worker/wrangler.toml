@@ -1,0 +1,16 @@
+name = "jamo"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[durable_objects]
+bindings = [
+  { name = "JAMO_ENGINE", class_name = "JamoEngine" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["JamoEngine"]
+
+[[r2_buckets]]
+binding = "DICT_BUCKET"
+bucket_name = "jamo-dicts"

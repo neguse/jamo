@@ -129,6 +129,11 @@ impl IpaDict {
         let mut f = io::BufReader::new(fs::File::open(path)?);
         read_binary(&mut f)
     }
+
+    /// バイナリ辞書を Reader から読み込む (WASM 用)
+    pub fn load_binary_from_reader(reader: &mut impl Read) -> io::Result<Self> {
+        read_binary(reader)
+    }
 }
 
 const MAGIC: &[u8; 4] = b"JAMO";
