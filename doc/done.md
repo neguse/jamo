@@ -65,3 +65,10 @@
 - よかったこと: IPAdic + 接続コスト行列だけで「私は学生です」「東京に行きたい」「日本語を勉強する」が正しく変換された。Arc<IpaDict> でリクエスト間の辞書共有が簡潔に実現。
 - 判断: load_dict() でデフォルトパス候補 (data/ipadic, ../data/ipadic) を順に試す設計。テストは IPAdic がない環境ではスキップ。curl サブプロセスでの HTTP テストを維持。
 - 残課題: 「きょう」→「教」の精度問題。N-best 未対応。辞書バイナリ化未着手。
+
+### T024: ビットベクトル rank/select ✓ (2026-02-24)
+- やったこと: 簡潔ビットベクトル (BitVec) 実装。rank1/rank0/select1/select0 を O(1) で提供。大ブロック (256bit) + 小ブロック (64bit) + popcount 方式。11テスト。
+- 変更したファイル: jamo-core/src/bitvec.rs, jamo-core/src/lib.rs
+- よかったこと: from_bits() と from_raw() の2つのコンストラクタでテストと実用の両方が楽。rank/select の整合性テストで正しさを網羅的に検証できた。
+- 判断: select は線形探索 (大ブロック内4ブロック)。LOUDS trie の用途では十分。BMI2 の PDEP/PEXT は WASM で使えないので不採用。
+- 残課題: LOUDS trie (T025) で実際に使う。
