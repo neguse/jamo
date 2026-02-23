@@ -49,6 +49,24 @@ impl JamoEngine {
         .to_string()
     }
 
+    /// 予測変換: プレフィクスで始まる候補を返す (JSON 文字列)
+    pub fn predict(&self, prefix: &str, limit: usize) -> String {
+        let entries = self.dict.prefix_search(prefix, limit);
+        let mut seen = std::collections::HashSet::new();
+        let candidates: Vec<serde_json::Value> = entries
+            .into_iter()
+            .filter(|e| seen.insert(e.surface.clone()))
+            .map(|e| {
+                serde_json::json!({
+                    "surface": e.surface,
+                    "cost": e.cost,
+                })
+            })
+            .collect();
+
+        serde_json::json!({ "candidates": candidates }).to_string()
+    }
+
     /// 文節伸縮 + 再変換 (JSON 文字列を返す)
     pub fn resize(
         &self,

@@ -335,6 +335,13 @@ impl ConnectionCost for IpaDict {
     }
 }
 
+impl IpaDict {
+    /// プレフィクス検索: 指定読みで始まるエントリを返す (予測変換用)
+    pub fn prefix_search(&self, prefix: &str, limit: usize) -> Vec<Entry> {
+        self.trie.prefix_search(prefix, limit)
+    }
+}
+
 impl Dictionary for IpaDict {
     fn common_prefix_search(&self, input: &str) -> Vec<(usize, Vec<Entry>)> {
         self.trie.common_prefix_search(input)

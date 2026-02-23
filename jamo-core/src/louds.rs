@@ -132,7 +132,6 @@ impl LoudsTrie {
     }
 
     /// ノード node の子を列挙
-    #[cfg(test)]
     fn children(&self, node: usize) -> Vec<(u8, usize)> {
         let start = self.node_bit_start(node);
         let mut result = Vec::new();
@@ -186,6 +185,39 @@ impl LoudsTrie {
                     }
                 }
                 None => break,
+            }
+        }
+
+        results
+    }
+
+    /// プレフィクス検索: 指定プレフィクスで始まるキーの全エントリを返す
+    /// 戻り値: (表層形, エントリ一覧)
+    pub fn prefix_search(&self, prefix: &str, limit: usize) -> Vec<Entry> {
+        let bytes = prefix.as_bytes();
+        let mut current = 1; // ルートノード
+
+        // プレフィクスに沿って trie を辿る
+        for &byte in bytes {
+            match self.find_child(current, byte) {
+                Some(child) => current = child,
+                None => return Vec::new(),
+            }
+        }
+
+        // サブツリーを DFS で列挙
+        let mut results = Vec::new();
+        let mut stack = vec![current];
+        while let Some(node) = stack.pop() {
+            if let Some((start, end)) = self.terminal[node] {
+                results.extend_from_slice(&self.entries[start as usize..end as usize]);
+                if results.len() >= limit {
+                    results.truncate(limit);
+                    break;
+                }
+            }
+            for &(_label, child) in self.children(node).iter().rev() {
+                stack.push(child);
             }
         }
 
@@ -400,5 +432,64 @@ mod tests {
         let results = trie.common_prefix_search("key000");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].1[0].surface, "word0");
+    }
+
+    #[test]
+    fn test_prefix_search_basic() {
+        let e_te = vec![make_entry("て", -1000)];
+        let e_ten = vec![make_entry("天", -2000)];
+        let e_tenki = vec![make_entry("天気", -3500)];
+        let e_tera = vec![make_entry("寺", -2500)];
+
+        let mut keys: Vec<(&[u8], &[Entry])> = vec![
+            ("て".as_bytes(), &e_te),
+            ("てん".as_bytes(), &e_ten),
+            ("てんき".as_bytes(), &e_tenki),
+            ("てら".as_bytes(), &e_tera),
+        ];
+        keys.sort_by_key(|(k, _)| k.to_vec());
+        let trie = LoudsTrie::build(&keys);
+
+        // "て" で prefix_search → て, てん, てんき, てら の4エントリ
+        let results = trie.prefix_search("て", 100);
+        let surfaces: Vec<&str> = results.iter().map(|e| e.surface.as_str()).collect();
+        assert!(surfaces.contains(&"て"), "surfaces: {surfaces:?}");
+        assert!(surfaces.contains(&"天"), "surfaces: {surfaces:?}");
+        assert!(surfaces.contains(&"天気"), "surfaces: {surfaces:?}");
+        assert!(surfaces.contains(&"寺"), "surfaces: {surfaces:?}");
+        assert_eq!(results.len(), 4);
+
+        // "てん" で prefix_search → てん, てんき の2エントリ
+        let results = trie.prefix_search("てん", 100);
+        let surfaces: Vec<&str> = results.iter().map(|e| e.surface.as_str()).collect();
+        assert!(surfaces.contains(&"天"), "surfaces: {surfaces:?}");
+        assert!(surfaces.contains(&"天気"), "surfaces: {surfaces:?}");
+        assert_eq!(results.len(), 2);
+
+        // "てんき" で prefix_search → てんき の1エントリ
+        let results = trie.prefix_search("てんき", 100);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].surface, "天気");
+
+        // "xyz" で prefix_search → なし
+        let results = trie.prefix_search("xyz", 100);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_prefix_search_limit() {
+        let e_a = vec![make_entry("A", -1000)];
+        let e_ab = vec![make_entry("AB", -1000)];
+        let e_ac = vec![make_entry("AC", -1000)];
+        let e_ad = vec![make_entry("AD", -1000)];
+
+        let mut keys: Vec<(&[u8], &[Entry])> =
+            vec![(b"a", &e_a), (b"ab", &e_ab), (b"ac", &e_ac), (b"ad", &e_ad)];
+        keys.sort_by_key(|(k, _)| k.to_vec());
+        let trie = LoudsTrie::build(&keys);
+
+        // limit=2: 最大2エントリ
+        let results = trie.prefix_search("a", 2);
+        assert_eq!(results.len(), 2);
     }
 }

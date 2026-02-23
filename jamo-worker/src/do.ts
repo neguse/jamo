@@ -93,6 +93,8 @@ export class JamoEngine implements DurableObject {
           return this.handleResize(url);
         case "/commit":
           return this.handleCommit(request);
+        case "/predict":
+          return this.handlePredict(url);
         case "/dict/add":
           return this.handleDictAdd(request);
         case "/dict/remove":
@@ -159,6 +161,53 @@ export class JamoEngine implements DurableObject {
     return new Response(JSON.stringify(result), {
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  private async handlePredict(url: URL): Promise<Response> {
+    const q = url.searchParams.get("q");
+    if (!q) {
+      return jsonResponse({ error: "missing q parameter" }, 400);
+    }
+
+    const limit = parseInt(url.searchParams.get("limit") ?? "10", 10);
+    const engine = await this.ensureEngine();
+    const resultJson = engine.predict(q, limit);
+    const result = JSON.parse(resultJson);
+
+    // ユーザー辞書・履歴からも予測候補を追加
+    const userCandidates: string[] = [];
+    const dictCursor = this.state.storage.sql.exec(
+      "SELECT surface FROM user_dict WHERE yomi LIKE ? || '%' LIMIT ?",
+      q,
+      limit
+    );
+    for (const row of dictCursor) {
+      userCandidates.push(row.surface as string);
+    }
+    const historyCursor = this.state.storage.sql.exec(
+      "SELECT surface FROM user_history WHERE yomi LIKE ? || '%' ORDER BY count DESC, last_used DESC LIMIT ?",
+      q,
+      limit
+    );
+    for (const row of historyCursor) {
+      const s = row.surface as string;
+      if (!userCandidates.includes(s)) {
+        userCandidates.push(s);
+      }
+    }
+
+    // ユーザー候補を先頭に挿入
+    const existing = new Set(
+      (result.candidates as { surface: string }[]).map((c) => c.surface)
+    );
+    const merged = [
+      ...userCandidates
+        .filter((s) => !existing.has(s))
+        .map((s) => ({ surface: s, cost: 0 })),
+      ...result.candidates,
+    ];
+
+    return jsonResponse({ candidates: merged.slice(0, limit) });
   }
 
   private async handleCommit(request: Request): Promise<Response> {
@@ -325,6 +374,48 @@ export class JamoEngine implements DurableObject {
           this.injectUserDict(result);
           this.reorderCandidates(result);
           ws.send(JSON.stringify({ id, ...result }));
+          break;
+        }
+        case "predict": {
+          const limit = msg.limit ?? 10;
+          const resultJson = engine.predict(msg.q ?? "", limit);
+          const result = JSON.parse(resultJson);
+          // ユーザー辞書・履歴も追加
+          const userCandidates: string[] = [];
+          const dCursor = this.state.storage.sql.exec(
+            "SELECT surface FROM user_dict WHERE yomi LIKE ? || '%' LIMIT ?",
+            msg.q ?? "",
+            limit
+          );
+          for (const row of dCursor) {
+            userCandidates.push(row.surface as string);
+          }
+          const hCursor = this.state.storage.sql.exec(
+            "SELECT surface FROM user_history WHERE yomi LIKE ? || '%' ORDER BY count DESC LIMIT ?",
+            msg.q ?? "",
+            limit
+          );
+          for (const row of hCursor) {
+            const s = row.surface as string;
+            if (!userCandidates.includes(s)) userCandidates.push(s);
+          }
+          const existing = new Set(
+            (result.candidates as { surface: string }[]).map(
+              (c: { surface: string }) => c.surface
+            )
+          );
+          const merged = [
+            ...userCandidates
+              .filter((s: string) => !existing.has(s))
+              .map((s: string) => ({ surface: s, cost: 0 })),
+            ...result.candidates,
+          ];
+          ws.send(
+            JSON.stringify({
+              id,
+              candidates: merged.slice(0, limit),
+            })
+          );
           break;
         }
         case "commit": {

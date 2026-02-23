@@ -149,3 +149,10 @@
 - よかったこと: ユーザー辞書の候補は candidates の先頭に unshift するだけで優先表示。学習テーブルの reorder と組み合わせて、ユーザー登録単語は常に上位に来る。
 - 判断: user_dict は (yomi, surface) を PK にシンプルな構造。import はバッチ INSERT。WASM エンジンに注入するのではなく、TypeScript 側で候補リストに追加する方式。
 - 残課題: ユーザー辞書のエクスポート。品詞指定の対応。
+
+### T046: 予測変換 ✓ (2026-02-24)
+- やったこと: LOUDS trie に prefix_search (DFS でサブツリー列挙) 追加。IpaDict.prefix_search() 公開。WASM に predict() メソッド追加。DO に /predict エンドポイント + WebSocket predict メッセージ。ユーザー辞書・履歴からも LIKE prefix% で予測候補追加。
+- 変更したファイル: jamo-core/src/louds.rs, jamo-core/src/ipadic.rs, jamo-core/src/wasm.rs, jamo-worker/src/do.ts
+- よかったこと: LOUDS trie の構造を活かしてプレフィクスノードまで辿り→DFS で子孫を列挙する方式がシンプル。重複除去は HashSet で O(n)。ユーザー辞書/履歴の候補をシステム辞書候補と統合。
+- 判断: limit パラメータで結果数を制限 (DFS 打ち切り)。ユーザー候補をシステム候補より優先 (先頭に配置)。cost=0 でユーザー候補を返す (実コストはユーザー辞書にないため)。
+- 残課題: 予測候補のスコアリング改善 (頻度・文脈)。
