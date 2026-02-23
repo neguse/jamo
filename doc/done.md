@@ -58,3 +58,10 @@
 - よかったこと: 接続コスト行列を入れただけで「天木」→「天気」に改善された。IPAdicのmatrix.defは1316x1316=173万エントリだが読み込みは3秒弱。
 - 判断: IPAdic のCSVを直接読む方式。辞書バイナリ化はT023で。EUC-JP→UTF-8変換は事前にiconvで実施（Rust側ではUTF-8前提）。data/ipadic/ は .gitignore。
 - 残課題: 「今日」vs「教」の精度問題。辞書ロード3秒は遅い（バイナリ化が必要）。LOUDS trie 未実装。
+
+### T021: CLI/HTTP を IPAdic に接続 ✓ (2026-02-24)
+- やったこと: CLI と HTTP サーバーを IPAdic 辞書に接続。--dict オプション追加。Arc<IpaDict> でサーバー全体で辞書共有。CLI結合テスト4件、HTTP結合テスト2件を IPAdic 対応に更新。
+- 変更したファイル: jamo-cli/src/main.rs, jamo-cli/src/serve.rs, jamo-cli/tests/cli_test.rs, jamo-cli/tests/serve_test.rs
+- よかったこと: IPAdic + 接続コスト行列だけで「私は学生です」「東京に行きたい」「日本語を勉強する」が正しく変換された。Arc<IpaDict> でリクエスト間の辞書共有が簡潔に実現。
+- 判断: load_dict() でデフォルトパス候補 (data/ipadic, ../data/ipadic) を順に試す設計。テストは IPAdic がない環境ではスキップ。curl サブプロセスでの HTTP テストを維持。
+- 残課題: 「きょう」→「教」の精度問題。N-best 未対応。辞書バイナリ化未着手。
