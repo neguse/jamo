@@ -191,3 +191,10 @@
 - よかったこと: 全エンドポイントを一箇所にまとめたことで実装との乖離を検出しやすい。components/schemas でレスポンス型を共有。
 - 判断: YAML 形式で OpenAPI spec を記述。WebSocket はパス定義+description でメッセージ形式を文書化。
 - 残課題: バリデーションツール (swagger-cli validate) の CI 統合。
+
+### T054: 辞書フォーマット確定 ✓ (2026-02-24)
+- やったこと: doc/dict-format.md にバイナリ辞書フォーマットの仕様書を作成。Header, LOUDS BitVec, Labels, Terminal, Entries, Connection Matrix, Stats の各セクションのバイトレイアウトを詳細に記載。変更履歴 (v1→v2) も文書化。
+- 変更したファイル: doc/dict-format.md (新規)
+- よかったこと: ipadic.rs の write_binary/read_binary の実装と1:1で対応する仕様書。他言語での実装参照としても使える。
+- 判断: Markdown + テーブルで記述。コードとの対応を明示するためセクション順を実装の書き込み順に合わせた。
+- 残課題: フォーマットのバリデーションツール (magic + version チェック CLI)。
