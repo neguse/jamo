@@ -156,3 +156,10 @@
 - よかったこと: LOUDS trie の構造を活かしてプレフィクスノードまで辿り→DFS で子孫を列挙する方式がシンプル。重複除去は HashSet で O(n)。ユーザー辞書/履歴の候補をシステム辞書候補と統合。
 - 判断: limit パラメータで結果数を制限 (DFS 打ち切り)。ユーザー候補をシステム候補より優先 (先頭に配置)。cost=0 でユーザー候補を返す (実コストはユーザー辞書にないため)。
 - 残課題: 予測候補のスコアリング改善 (頻度・文脈)。
+
+### T048: C API (cbindgen) ✓ (2026-02-24)
+- やったこと: capi.rs に `extern "C"` 関数群を実装。cbindgen で jamo.h 自動生成。jamo_engine_open/free, jamo_convert, jamo_predict, jamo_string_free の5関数。JSON 文字列で結果を返す方式。
+- 変更したファイル: jamo-core/src/capi.rs (新規), jamo-core/src/lib.rs, jamo-core/cbindgen.toml (新規), jamo-core/include/jamo.h (新規)
+- よかったこと: cbindgen が不透明型 (opaque struct) と関数シグネチャを自動生成。手動の JSON 構築で serde_json 依存を避けた。cdylib で 497KB の共有ライブラリ。
+- 判断: WASM の JamoEngine と名前衝突を避けるため C API 側は JamoCEngine。JSON で結果を返す方式は言語非依存で扱いやすい。safety doc は全 unsafe 関数に記載。
+- 残課題: resize の C API 追加。エラー情報の取得 API。

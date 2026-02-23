@@ -20,6 +20,7 @@
 | T044 学習テーブル | 完了 | SQLite user_history, commit→reorder, LRU 10K |
 | T045 ユーザー辞書 API | 完了 | /dict/add,remove,list,import + WS対応 |
 | T046 予測変換 | 完了 | prefix_search + /predict + WS predict |
+| T048 C API | 完了 | cbindgen, jamo.h, libjamo_core.so 497KB |
 
 ## 確認済みの動作 (IPAdic + LOUDS + バイナリ)
 
@@ -48,4 +49,5 @@
 ## 次のアクション
 
 Iter 2 残: T022 bigram LM (精度改善)
-Iter 3 続: T047 ドメイン辞書切り替え / T048 C API
+Iter 3 続: T047 ドメイン辞書切り替え
+Iter 4 開始可能: T050 ベンチマーク / T051 精度評価
