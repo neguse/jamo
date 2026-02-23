@@ -6,7 +6,7 @@
 |------|------|--------|
 | 0 | 完了 | 足場 |
 | 1 | ほぼ完了 | 針金 (最薄E2E) |
-| 2 | 進行中 | 実データ |
+| 2 | ほぼ完了 | 実データ |
 | 3 | - | 運用 |
 | 4 | - | 品質→1.0 |
 
@@ -24,7 +24,7 @@
 | T027 連文節変換 | 完了 | pos_type分類, group_clauses, 6テスト |
 | T028 文節伸縮 | 完了 | resize_boundaries, convert_with_boundaries, 5テスト |
 | T029 N-best | 完了 | 各セグメントの候補一覧, 3テスト追加 |
-| T030 精度テスト | 未着手 | |
+| T030 精度テスト | 完了 | 52文コーパス, 文一致 48.1%, 文字精度 69.1% |
 
 ## 確認済みの動作 (IPAdic + LOUDS + バイナリ)
 
@@ -42,9 +42,9 @@
 
 ## テスト
 
-全62テスト通過 (jamo-core: 56, jamo-cli: 4 CLI + 2 HTTP)
+全64テスト通過 (jamo-core: 56 unit + 2 accuracy, jamo-cli: 4 CLI + 2 HTTP)
 
 ## 次のアクション
 
-Iter 2 継続: T030 精度テスト / T028 文節伸縮
-または Iter 3 開始: T040 Docker / T041 CF Worker
+Iter 2 残: T022 bigram LM (精度改善)
+Iter 3 開始: T040 Docker / T041 CF Worker
