@@ -80,10 +80,10 @@ if echo "$STAGED" | grep -q '^doc/done.md$'; then
     # 新しいエントリが追加されている場合、必須セクションをチェック
     if echo "$DONE_DIFF" | grep -q '^+###.*✓'; then
         MISSING=""
-        echo "$DONE_DIFF" | grep -q '^\+- やったこと:' || MISSING="$MISSING やったこと"
-        echo "$DONE_DIFF" | grep -q '^\+- よかったこと:' || MISSING="$MISSING よかったこと"
-        echo "$DONE_DIFF" | grep -q '^\+- 判断:' || MISSING="$MISSING 判断"
-        echo "$DONE_DIFF" | grep -q '^\+- 残課題:' || MISSING="$MISSING 残課題"
+        echo "$DONE_DIFF" | grep -q '^[+]- やったこと:' || MISSING="$MISSING やったこと"
+        echo "$DONE_DIFF" | grep -q '^[+]- よかったこと:' || MISSING="$MISSING よかったこと"
+        echo "$DONE_DIFF" | grep -q '^[+]- 判断:' || MISSING="$MISSING 判断"
+        echo "$DONE_DIFF" | grep -q '^[+]- 残課題:' || MISSING="$MISSING 残課題"
 
         if [ -n "$MISSING" ]; then
             echo -e "${RED}FAIL${NC}"
