@@ -95,7 +95,7 @@ $ jamo dict merge a.dict b.dict # 辞書マージ
 $ jamo dict info system.dict    # 辞書統計
 $ jamo convert きょうはいいてんき  # CLIで変換テスト
 
-全て単一バイナリ (Rust) で提供。docker run でも動作。
+全て単一バイナリ (Rust) で提供。
 ```
 
 ### プロジェクト構成
@@ -456,7 +456,6 @@ HTTPサーバーとWASM化、CF Workers/DO上での動作。
 
 - [ ] HTTPサーバー (`jamo serve`, axum)
 - [ ] HTTP API (`/convert`, `/candidates`)
-- [ ] Dockerイメージ
 - [ ] wasm-pack ビルド
 - [ ] Cloudflare Worker (ルーター・認証)
 - [ ] Durable Object (ユーザーインスタンス)

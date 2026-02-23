@@ -47,4 +47,4 @@
 ## 次のアクション
 
 Iter 2 残: T022 bigram LM (精度改善)
-Iter 3 開始: T040 Docker / T041 CF Worker
+Iter 3 開始: T041 CF Worker / T042 Durable Object
