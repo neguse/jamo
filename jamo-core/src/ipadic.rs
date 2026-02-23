@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::fs;
+use std::io::{self, Read, Write};
 use std::path::Path;
 
+use crate::bitvec::BitVec;
 use crate::dict::{Dictionary, Entry};
 use crate::louds::LoudsTrie;
 use crate::viterbi::ConnectionCost;
@@ -106,6 +108,213 @@ impl IpaDict {
     pub fn pos_size(&self) -> usize {
         self.num_pos
     }
+
+    /// バイナリ辞書を書き出す
+    pub fn save_binary(&self, path: &Path) -> io::Result<()> {
+        let mut f = io::BufWriter::new(fs::File::create(path)?);
+        write_binary(
+            &mut f,
+            &self.trie,
+            &self.matrix,
+            self.num_pos,
+            self.vocab_size,
+            self.reading_count,
+        )
+    }
+
+    /// バイナリ辞書から読み込む
+    pub fn load_binary(path: &Path) -> io::Result<Self> {
+        let mut f = io::BufReader::new(fs::File::open(path)?);
+        read_binary(&mut f)
+    }
+}
+
+const MAGIC: &[u8; 4] = b"JAMO";
+const VERSION: u32 = 1;
+
+fn write_u32(w: &mut impl Write, v: u32) -> io::Result<()> {
+    w.write_all(&v.to_le_bytes())
+}
+
+fn write_u16(w: &mut impl Write, v: u16) -> io::Result<()> {
+    w.write_all(&v.to_le_bytes())
+}
+
+fn write_i16(w: &mut impl Write, v: i16) -> io::Result<()> {
+    w.write_all(&v.to_le_bytes())
+}
+
+fn read_u32(r: &mut impl Read) -> io::Result<u32> {
+    let mut buf = [0u8; 4];
+    r.read_exact(&mut buf)?;
+    Ok(u32::from_le_bytes(buf))
+}
+
+fn read_u16(r: &mut impl Read) -> io::Result<u16> {
+    let mut buf = [0u8; 2];
+    r.read_exact(&mut buf)?;
+    Ok(u16::from_le_bytes(buf))
+}
+
+fn read_i16(r: &mut impl Read) -> io::Result<i16> {
+    let mut buf = [0u8; 2];
+    r.read_exact(&mut buf)?;
+    Ok(i16::from_le_bytes(buf))
+}
+
+fn write_binary(
+    w: &mut impl Write,
+    trie: &LoudsTrie,
+    matrix: &[i16],
+    num_pos: usize,
+    vocab_size: usize,
+    reading_count: usize,
+) -> io::Result<()> {
+    // Header
+    w.write_all(MAGIC)?;
+    write_u32(w, VERSION)?;
+
+    let bits = trie.bits();
+    let labels = trie.labels();
+    let terminal = trie.terminal();
+    let entries = trie.entries();
+
+    // BitVec: len + blocks
+    write_u32(w, bits.len() as u32)?;
+    let blocks = bits.blocks();
+    write_u32(w, blocks.len() as u32)?;
+    for &block in blocks {
+        w.write_all(&block.to_le_bytes())?;
+    }
+
+    // Labels
+    write_u32(w, labels.len() as u32)?;
+    w.write_all(labels)?;
+
+    // Terminal: pairs of (start, end) with u32::MAX sentinel for None
+    write_u32(w, terminal.len() as u32)?;
+    for t in terminal {
+        match t {
+            Some((start, end)) => {
+                write_u32(w, *start)?;
+                write_u32(w, *end)?;
+            }
+            None => {
+                write_u32(w, u32::MAX)?;
+                write_u32(w, 0)?;
+            }
+        }
+    }
+
+    // Entries
+    write_u32(w, entries.len() as u32)?;
+    for e in entries {
+        let surface_bytes = e.surface.as_bytes();
+        write_u16(w, surface_bytes.len() as u16)?;
+        w.write_all(surface_bytes)?;
+        write_u16(w, e.left_id)?;
+        write_u16(w, e.right_id)?;
+        write_i16(w, e.cost)?;
+    }
+
+    // Matrix
+    write_u32(w, num_pos as u32)?;
+    for &cost in matrix {
+        write_i16(w, cost)?;
+    }
+
+    // Stats
+    write_u32(w, vocab_size as u32)?;
+    write_u32(w, reading_count as u32)?;
+
+    Ok(())
+}
+
+fn read_binary(r: &mut impl Read) -> io::Result<IpaDict> {
+    // Header
+    let mut magic = [0u8; 4];
+    r.read_exact(&mut magic)?;
+    if &magic != MAGIC {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid magic"));
+    }
+    let version = read_u32(r)?;
+    if version != VERSION {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("unsupported version: {version}"),
+        ));
+    }
+
+    // BitVec
+    let bits_len = read_u32(r)? as usize;
+    let num_blocks = read_u32(r)? as usize;
+    let mut blocks = vec![0u64; num_blocks];
+    for block in &mut blocks {
+        let mut buf = [0u8; 8];
+        r.read_exact(&mut buf)?;
+        *block = u64::from_le_bytes(buf);
+    }
+    let bits = BitVec::from_raw(blocks, bits_len);
+
+    // Labels
+    let labels_count = read_u32(r)? as usize;
+    let mut labels = vec![0u8; labels_count];
+    r.read_exact(&mut labels)?;
+
+    // Terminal
+    let terminal_count = read_u32(r)? as usize;
+    let mut terminal = Vec::with_capacity(terminal_count);
+    for _ in 0..terminal_count {
+        let start = read_u32(r)?;
+        let end = read_u32(r)?;
+        if start == u32::MAX {
+            terminal.push(None);
+        } else {
+            terminal.push(Some((start, end)));
+        }
+    }
+
+    // Entries
+    let entries_count = read_u32(r)? as usize;
+    let mut entries = Vec::with_capacity(entries_count);
+    for _ in 0..entries_count {
+        let surface_len = read_u16(r)? as usize;
+        let mut surface_bytes = vec![0u8; surface_len];
+        r.read_exact(&mut surface_bytes)?;
+        let surface = String::from_utf8(surface_bytes)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let left_id = read_u16(r)?;
+        let right_id = read_u16(r)?;
+        let cost = read_i16(r)?;
+        entries.push(Entry {
+            surface,
+            left_id,
+            right_id,
+            cost,
+        });
+    }
+
+    let trie = LoudsTrie::from_parts(bits, labels, terminal, entries);
+
+    // Matrix
+    let num_pos = read_u32(r)? as usize;
+    let matrix_size = num_pos * num_pos;
+    let mut matrix = vec![0i16; matrix_size];
+    for cost in &mut matrix {
+        *cost = read_i16(r)?;
+    }
+
+    // Stats
+    let vocab_size = read_u32(r)? as usize;
+    let reading_count = read_u32(r)? as usize;
+
+    Ok(IpaDict {
+        trie,
+        matrix,
+        num_pos,
+        vocab_size,
+        reading_count,
+    })
 }
 
 impl ConnectionCost for IpaDict {
@@ -300,5 +509,60 @@ mod tests {
             "「今日」が候補にあるはず: {:?}",
             surfaces
         );
+    }
+
+    #[test]
+    fn test_binary_roundtrip() {
+        let ipadic_dir = Path::new("../data/ipadic");
+        if !ipadic_dir.exists() {
+            eprintln!("Skipping: IPAdic not found");
+            return;
+        }
+
+        let dict = IpaDict::load(ipadic_dir).expect("failed to load IPAdic");
+
+        // バイナリに書き出し
+        let tmp = std::env::temp_dir().join("jamo_test_dict.bin");
+        dict.save_binary(&tmp).expect("failed to save binary");
+
+        let file_size = fs::metadata(&tmp).unwrap().len();
+        eprintln!(
+            "Binary dict size: {} bytes ({:.1} MB)",
+            file_size,
+            file_size as f64 / 1_048_576.0
+        );
+
+        // バイナリから読み込み
+        let dict2 = IpaDict::load_binary(&tmp).expect("failed to load binary");
+
+        // 統計が一致
+        assert_eq!(dict.vocab_size(), dict2.vocab_size());
+        assert_eq!(dict.reading_count(), dict2.reading_count());
+        assert_eq!(dict.pos_size(), dict2.pos_size());
+
+        // 変換結果が一致
+        let result1 = crate::convert_with_conn("わたしはがくせいです", &dict, &dict);
+        let result2 = crate::convert_with_conn("わたしはがくせいです", &dict2, &dict2);
+        let text1: String = result1
+            .segments
+            .iter()
+            .map(|s| s.surface.as_str())
+            .collect();
+        let text2: String = result2
+            .segments
+            .iter()
+            .map(|s| s.surface.as_str())
+            .collect();
+        assert_eq!(text1, text2);
+
+        // 接続コストが一致
+        assert_eq!(dict.connection_cost(0, 0), dict2.connection_cost(0, 0));
+        assert_eq!(
+            dict.connection_cost(100, 200),
+            dict2.connection_cost(100, 200)
+        );
+
+        // クリーンアップ
+        let _ = fs::remove_file(&tmp);
     }
 }

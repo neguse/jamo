@@ -85,4 +85,11 @@
 - 変更したファイル: jamo-core/src/ipadic.rs
 - よかったこと: 差し替えがスムーズ。common_prefix_search の返り値型が同じなので Dictionary トレイト実装は1行で済んだ。IPAdic + 接続コストの変換結果も変化なし。
 - 判断: HashMap をソートして LOUDS trie を構築。ロード時間はソート+構築分増えるが、検索時のメモリ効率が大幅改善。ロード時間改善は辞書バイナリ化 (T023) で対応。
-- 残課題: メモリ使用量の計測 (HashMap 比較)。辞書バイナリ化未着手。
+- 残課題: メモリ使用量の計測 (HashMap 比較)。
+
+### T023: 辞書バイナリフォーマット ✓ (2026-02-24)
+- やったこと: LOUDS trie + 接続コスト行列のバイナリシリアライズ/デシリアライズ。`jamo dict build` サブコマンド。load_dict() でバイナリ辞書を優先ロード。roundtrip テスト。
+- 変更したファイル: jamo-core/src/ipadic.rs, jamo-core/src/bitvec.rs, jamo-core/src/louds.rs, jamo-cli/src/main.rs
+- よかったこと: CSV ロード 3.76秒 → バイナリロード 0.19秒 (約20倍高速化)。バイナリサイズ 18.8MB。BitVec は blocks+len だけ保存して rank テーブルは再構築。
+- 判断: リトルエンディアン固定。magic "JAMO" + version 1 のヘッダ。terminal は u32::MAX をセンチネルに。エントリの surface は可変長 (u16 length prefix)。mmap は将来課題。
+- 残課題: バイナリサイズ 18.8MB は大きい (接続コスト行列だけで 3.5MB)。圧縮やエントリのデデュプは後のIter。

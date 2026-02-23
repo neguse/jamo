@@ -201,6 +201,41 @@ impl LoudsTrie {
     pub fn num_bits(&self) -> usize {
         self.bits.len()
     }
+
+    /// シリアライズ用アクセサ
+    pub fn bits(&self) -> &BitVec {
+        &self.bits
+    }
+
+    /// シリアライズ用アクセサ
+    pub fn labels(&self) -> &[u8] {
+        &self.labels
+    }
+
+    /// シリアライズ用アクセサ
+    pub fn terminal(&self) -> &[Option<(u32, u32)>] {
+        &self.terminal
+    }
+
+    /// シリアライズ用アクセサ
+    pub fn entries(&self) -> &[Entry] {
+        &self.entries
+    }
+
+    /// デシリアライズ用: 各フィールドから直接構築
+    pub fn from_parts(
+        bits: BitVec,
+        labels: Vec<u8>,
+        terminal: Vec<Option<(u32, u32)>>,
+        entries: Vec<Entry>,
+    ) -> Self {
+        Self {
+            bits,
+            labels,
+            terminal,
+            entries,
+        }
+    }
 }
 
 #[cfg(test)]

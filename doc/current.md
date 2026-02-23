@@ -17,8 +17,10 @@
 | T020 IPAdic パース | 完了 | 39万エントリ, 接続コスト行列, 21テスト |
 | T021 CLI/HTTP接続 | 完了 | --dict オプション, Arc共有, 6テスト更新 |
 | T022 bigram LM | 未着手 | |
-| T023 辞書バイナリ化 | 未着手 | |
-| T024-T026 LOUDS trie | 未着手 | |
+| T023 辞書バイナリ化 | 完了 | CSV 3.76s → bin 0.19s, 18.8MB |
+| T024 ビットベクトル | 完了 | rank/select O(1), 11テスト |
+| T025 LOUDS trie | 完了 | バイト単位 trie, 10テスト |
+| T026 HashMap差替 | 完了 | IpaDict 内部を LOUDS に |
 | T027 文節区切り | 未着手 | |
 
 ## 確認済みの動作 (IPAdic)
@@ -32,14 +34,14 @@
 ## 既知の問題
 
 - 「きょう」→「教」（「今日」が期待値）— 接続コストの精度限界
-- 辞書ロード約3秒 — バイナリ化 (T023) で改善予定
 - N-best 未対応
 - WASM ビルド未着手 (wasm-pack 未インストール)
+- バイナリ辞書 18.8MB (接続コスト行列 3.5MB)
 
 ## テスト
 
-全27テスト通過 (jamo-core: 21, jamo-cli: 4 CLI + 2 HTTP)
+全48テスト通過 (jamo-core: 42, jamo-cli: 4 CLI + 2 HTTP)
 
 ## 次のアクション
 
-Iter 2 継続: T023 辞書バイナリ化 or T024 LOUDS trie
+Iter 2 継続: T027 連文節変換 / T029 N-best

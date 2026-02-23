@@ -1,6 +1,7 @@
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use jamo_core::ipadic::IpaDict;
 
@@ -17,6 +18,7 @@ fn main() {
     match args[1].as_str() {
         "convert" => cmd_convert(&args[2..]),
         "serve" => cmd_serve(&args[2..]),
+        "dict" => cmd_dict(&args[2..]),
         _ => {
             eprintln!("Unknown command: {}", args[1]);
             print_usage();
@@ -30,6 +32,7 @@ fn print_usage() {
     eprintln!("Commands:");
     eprintln!("  convert [--dict DIR] <text>   かな漢字変換");
     eprintln!("  serve [--dict DIR] [--port N]  HTTPサーバー起動");
+    eprintln!("  dict build [--dict DIR] -o <output>  辞書バイナリ構築");
 }
 
 /// 引数から --dict DIR を抽出。残りの引数も返す。
@@ -50,25 +53,47 @@ fn parse_dict_arg(args: &[String]) -> (Option<String>, Vec<String>) {
 }
 
 fn load_dict(dict_path: Option<&str>) -> Arc<IpaDict> {
+    let start = Instant::now();
+
+    // バイナリ辞書を優先
     if let Some(path) = dict_path {
-        eprintln!("Loading IPAdic from {path}...");
-        Arc::new(IpaDict::load(Path::new(path)).expect("failed to load IPAdic"))
-    } else {
-        // デフォルトパスを試す
-        let candidates = ["data/ipadic", "../data/ipadic"];
-        for p in candidates {
-            if Path::new(p).exists() {
-                eprintln!("Loading IPAdic from {p}...");
-                return Arc::new(IpaDict::load(Path::new(p)).expect("failed to load IPAdic"));
-            }
+        let bin_path = Path::new(path).with_extension("dict");
+        if bin_path.exists() {
+            eprintln!("Loading binary dict from {}...", bin_path.display());
+            let dict = IpaDict::load_binary(&bin_path).expect("failed to load binary dict");
+            eprintln!("Loaded in {:.2}s", start.elapsed().as_secs_f64());
+            return Arc::new(dict);
         }
-        // IPAdic が見つからない場合はテスト辞書にフォールバック
-        eprintln!("IPAdic not found, using test dictionary");
-        eprintln!("Hint: download IPAdic to data/ipadic/ or use --dict <path>");
-        // テスト辞書で fallback はできない (型が違う) のでエラー
-        eprintln!("Error: no dictionary available");
-        std::process::exit(1);
+        eprintln!("Loading IPAdic from {path}...");
+        let dict = Arc::new(IpaDict::load(Path::new(path)).expect("failed to load IPAdic"));
+        eprintln!("Loaded in {:.2}s", start.elapsed().as_secs_f64());
+        return dict;
     }
+
+    // デフォルトパスを試す (バイナリ優先)
+    let bin_candidates = ["data/ipadic.dict", "../data/ipadic.dict"];
+    for p in bin_candidates {
+        if Path::new(p).exists() {
+            eprintln!("Loading binary dict from {p}...");
+            let dict = IpaDict::load_binary(Path::new(p)).expect("failed to load binary dict");
+            eprintln!("Loaded in {:.2}s", start.elapsed().as_secs_f64());
+            return Arc::new(dict);
+        }
+    }
+
+    let candidates = ["data/ipadic", "../data/ipadic"];
+    for p in candidates {
+        if Path::new(p).exists() {
+            eprintln!("Loading IPAdic from {p}...");
+            let dict = Arc::new(IpaDict::load(Path::new(p)).expect("failed to load IPAdic"));
+            eprintln!("Loaded in {:.2}s", start.elapsed().as_secs_f64());
+            return dict;
+        }
+    }
+
+    eprintln!("Error: no dictionary available");
+    eprintln!("Hint: download IPAdic to data/ipadic/ or use --dict <path>");
+    std::process::exit(1);
 }
 
 fn cmd_convert(args: &[String]) {
@@ -105,4 +130,67 @@ fn cmd_serve(args: &[String]) {
 
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(serve::run(port, dict));
+}
+
+fn cmd_dict(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Usage: jamo dict build [--dict DIR] -o <output>");
+        std::process::exit(1);
+    }
+
+    match args[0].as_str() {
+        "build" => cmd_dict_build(&args[1..]),
+        _ => {
+            eprintln!("Unknown dict subcommand: {}", args[0]);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_dict_build(args: &[String]) {
+    let (dict_path, rest) = parse_dict_arg(args);
+
+    let mut output = None;
+    let mut i = 0;
+    while i < rest.len() {
+        if rest[i] == "-o" && i + 1 < rest.len() {
+            output = Some(rest[i + 1].clone());
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+
+    let output = output.unwrap_or_else(|| {
+        eprintln!("Usage: jamo dict build [--dict DIR] -o <output>");
+        std::process::exit(1);
+    });
+
+    let start = Instant::now();
+
+    // CSV ロード
+    let dict_dir = dict_path.as_deref().unwrap_or("data/ipadic");
+    eprintln!("Loading IPAdic from {dict_dir}...");
+    let dict = IpaDict::load(Path::new(dict_dir)).expect("failed to load IPAdic");
+    let load_time = start.elapsed();
+
+    eprintln!(
+        "Loaded {} vocab, {} readings in {:.2}s",
+        dict.vocab_size(),
+        dict.reading_count(),
+        load_time.as_secs_f64()
+    );
+
+    // バイナリ書き出し
+    let save_start = Instant::now();
+    dict.save_binary(Path::new(&output))
+        .expect("failed to save binary dict");
+    let save_time = save_start.elapsed();
+
+    let file_size = std::fs::metadata(&output).unwrap().len();
+    eprintln!(
+        "Saved to {output} ({:.1} MB) in {:.2}s",
+        file_size as f64 / 1_048_576.0,
+        save_time.as_secs_f64()
+    );
 }

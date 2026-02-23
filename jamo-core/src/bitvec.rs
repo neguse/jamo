@@ -79,6 +79,11 @@ impl BitVec {
         self.len == 0
     }
 
+    /// 内部ブロック配列への参照 (シリアライズ用)
+    pub fn blocks(&self) -> &[u64] {
+        &self.blocks
+    }
+
     /// i 番目のビットを取得
     pub fn get(&self, i: usize) -> bool {
         debug_assert!(i < self.len);
