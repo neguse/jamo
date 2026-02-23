@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::dict::{Dictionary, Entry};
+use crate::louds::LoudsTrie;
 use crate::viterbi::ConnectionCost;
 
 /// IPAdic CSV からパースしたエントリ
@@ -17,12 +18,16 @@ struct RawEntry {
 
 /// IPAdic から構築した辞書
 pub struct IpaDict {
-    /// 読み → エントリ一覧
-    entries: HashMap<String, Vec<Entry>>,
+    /// LOUDS trie (読み → エントリ)
+    trie: LoudsTrie,
     /// 接続コスト行列 [left_id * num_right + right_id] = cost
     matrix: Vec<i16>,
     /// 品詞ID数
     num_pos: usize,
+    /// 語彙数
+    vocab_size: usize,
+    /// 読みの種類数
+    reading_count: usize,
 }
 
 impl IpaDict {
@@ -42,16 +47,29 @@ impl IpaDict {
         }
 
         // 読みごとにグループ化
-        let mut entries: HashMap<String, Vec<Entry>> = HashMap::new();
+        let mut grouped: HashMap<String, Vec<Entry>> = HashMap::new();
         for raw in &raw_entries {
             let reading = katakana_to_hiragana(&raw.reading);
-            entries.entry(reading).or_default().push(Entry {
+            grouped.entry(reading).or_default().push(Entry {
                 surface: raw.surface.clone(),
                 left_id: raw.left_id,
                 right_id: raw.right_id,
                 cost: raw.cost,
             });
         }
+
+        let vocab_size = grouped.values().map(|v| v.len()).sum();
+        let reading_count = grouped.len();
+
+        // ソート済みキーリストを構築して LOUDS trie を作る
+        let mut sorted: Vec<(String, Vec<Entry>)> = grouped.into_iter().collect();
+        sorted.sort_by(|(a, _), (b, _)| a.as_bytes().cmp(b.as_bytes()));
+
+        let keys: Vec<(&[u8], &[Entry])> = sorted
+            .iter()
+            .map(|(k, v)| (k.as_bytes(), v.as_slice()))
+            .collect();
+        let trie = LoudsTrie::build(&keys);
 
         // matrix.def をパース
         let matrix_path = dir.join("matrix.def");
@@ -60,9 +78,11 @@ impl IpaDict {
         let (num_pos, matrix) = parse_matrix(&matrix_content)?;
 
         Ok(IpaDict {
-            entries,
+            trie,
             matrix,
             num_pos,
+            vocab_size,
+            reading_count,
         })
     }
 
@@ -74,12 +94,12 @@ impl IpaDict {
 
     /// 語彙数
     pub fn vocab_size(&self) -> usize {
-        self.entries.values().map(|v| v.len()).sum()
+        self.vocab_size
     }
 
     /// 読みの種類数
     pub fn reading_count(&self) -> usize {
-        self.entries.len()
+        self.reading_count
     }
 
     /// 品詞ID数
@@ -96,27 +116,7 @@ impl ConnectionCost for IpaDict {
 
 impl Dictionary for IpaDict {
     fn common_prefix_search(&self, input: &str) -> Vec<(usize, Vec<Entry>)> {
-        let mut results = Vec::new();
-        let mut end = 0;
-        for (i, _) in input.char_indices() {
-            if i == 0 {
-                continue;
-            }
-            end = i;
-            let prefix = &input[..i];
-            if let Some(entries) = self.entries.get(prefix) {
-                results.push((i, entries.clone()));
-            }
-        }
-        if !input.is_empty() {
-            let full_len = input.len();
-            if full_len != end
-                && let Some(entries) = self.entries.get(input)
-            {
-                results.push((full_len, entries.clone()));
-            }
-        }
-        results
+        self.trie.common_prefix_search(input)
     }
 }
 
@@ -263,7 +263,6 @@ mod tests {
 
         // 接続コスト付きで「天気」が出るようになった (Iter 1 では「天木」だった)
         assert!(text.contains("天気"), "「天気」が含まれるはず: {text}");
-        // 「今日」vs「教」は接続コスト次第。精度改善は後のIterで。
     }
 
     #[test]

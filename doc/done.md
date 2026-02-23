@@ -79,3 +79,10 @@
 - よかったこと: node_bit_start(node) = select0(node-1)+1 と node_from_bit(pos) = rank1(pos)+1 の2関数で LOUDS ナビゲーションが完結する。バイト単位 trie なので UTF-8 を意識せず動作。
 - 判断: ラベルは u8 (バイト値) で、ひらがな1文字 (3バイト) は trie の3段に展開される。エントリは別プールに持ち、terminal に (start, end) インデックスを格納。find_child は子の線形探索だが、ひらがなは0xe3始まりの3バイトなので分岐は少ない。
 - 残課題: IpaDict への組み込み (T026)。
+
+### T026: HashMap → LOUDS trie 差し替え ✓ (2026-02-24)
+- やったこと: IpaDict の内部辞書を HashMap<String, Vec<Entry>> から LoudsTrie に差し替え。Dictionary トレイト実装は trie.common_prefix_search() に委譲。vocab_size/reading_count はロード時に計算して保持。全47テスト通過。
+- 変更したファイル: jamo-core/src/ipadic.rs
+- よかったこと: 差し替えがスムーズ。common_prefix_search の返り値型が同じなので Dictionary トレイト実装は1行で済んだ。IPAdic + 接続コストの変換結果も変化なし。
+- 判断: HashMap をソートして LOUDS trie を構築。ロード時間はソート+構築分増えるが、検索時のメモリ効率が大幅改善。ロード時間改善は辞書バイナリ化 (T023) で対応。
+- 残課題: メモリ使用量の計測 (HashMap 比較)。辞書バイナリ化未着手。
