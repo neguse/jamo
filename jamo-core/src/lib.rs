@@ -1,15 +1,28 @@
 pub mod dict;
+pub mod ipadic;
 pub mod lattice;
 pub mod viterbi;
 
 use dict::Dictionary;
 use viterbi::{ConvertResult, SimpleConnectionCost};
 
-/// かな文字列を変換する
+use viterbi::ConnectionCost;
+
+/// かな文字列を変換する (SimpleConnectionCost)
 pub fn convert(input: &str, dict: &dyn Dictionary) -> ConvertResult {
     let mut lat = lattice::Lattice::build(input, dict);
     let conn = SimpleConnectionCost;
     viterbi::decode(&mut lat, input, &conn)
+}
+
+/// かな文字列を変換する (接続コスト指定)
+pub fn convert_with_conn(
+    input: &str,
+    dict: &dyn Dictionary,
+    conn: &dyn ConnectionCost,
+) -> ConvertResult {
+    let mut lat = lattice::Lattice::build(input, dict);
+    viterbi::decode(&mut lat, input, conn)
 }
 
 #[cfg(test)]

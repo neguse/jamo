@@ -51,3 +51,10 @@
 - よかったこと: reqwest の代わりに curl サブプロセスでテストしたらビルド時間が大幅に短縮。ServerGuard の Drop でサーバー確実停止。
 - 判断: reqwest を dev-dependency に入れると依存が爆発するので curl でテスト。テストポートは18091,18092で分けて並列実行可能に。
 - 残課題: N-best 未対応。ユーザー辞書API未実装。辞書はリクエストごとに生成している (共有化が必要)。
+
+### T020: IPAdic パース ✓ (2026-02-24)
+- やったこと: IpaDict 実装。IPAdic CSV (EUC-JP→UTF-8) + matrix.def のパース。カタカナ→ひらがな変換。Dictionary + ConnectionCost トレイト実装。convert_with_conn() 追加。21テスト。
+- 変更したファイル: jamo-core/src/ipadic.rs, jamo-core/src/lib.rs, .gitignore
+- よかったこと: 接続コスト行列を入れただけで「天木」→「天気」に改善された。IPAdicのmatrix.defは1316x1316=173万エントリだが読み込みは3秒弱。
+- 判断: IPAdic のCSVを直接読む方式。辞書バイナリ化はT023で。EUC-JP→UTF-8変換は事前にiconvで実施（Rust側ではUTF-8前提）。data/ipadic/ は .gitignore。
+- 残課題: 「今日」vs「教」の精度問題。辞書ロード3秒は遅い（バイナリ化が必要）。LOUDS trie 未実装。
