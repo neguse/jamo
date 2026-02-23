@@ -163,3 +163,10 @@
 - よかったこと: cbindgen が不透明型 (opaque struct) と関数シグネチャを自動生成。手動の JSON 構築で serde_json 依存を避けた。cdylib で 497KB の共有ライブラリ。
 - 判断: WASM の JamoEngine と名前衝突を避けるため C API 側は JamoCEngine。JSON で結果を返す方式は言語非依存で扱いやすい。safety doc は全 unsafe 関数に記載。
 - 残課題: resize の C API 追加。エラー情報の取得 API。
+
+### T047: ドメイン辞書切り替え ✓ (2026-02-24)
+- やったこと: `?domain=X` パラメータで辞書を切り替え。R2 から `{domain}.dict` をロード。ドメインごとにエンジンをキャッシュ (Map)。WASM 初期化は1回のみ。HTTP/WebSocket 全エンドポイント対応。
+- 変更したファイル: jamo-worker/src/do.ts
+- よかったこと: Map<domain, WasmEngine> でドメインごとにキャッシュする設計がシンプル。WASM 初期化は1回で済み、辞書のみドメインごとにロード。
+- 判断: デフォルトは "ipadic"。R2 のキー命名は `{domain}.dict`。ドメイン辞書の作成自体はユーザー側の責任 (jamo dict build + R2 アップロード)。
+- 残課題: ドメイン辞書の管理 API (一覧・削除)。

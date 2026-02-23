@@ -17,11 +17,14 @@ interface ConvertResponse {
 
 const MAX_HISTORY = 10000;
 
+const DEFAULT_DOMAIN = "ipadic";
+
 export class JamoEngine implements DurableObject {
   private state: DurableObjectState;
   private env: Env;
-  private engine: WasmEngine | null = null;
-  private initPromise: Promise<void> | null = null;
+  private engines: Map<string, WasmEngine> = new Map();
+  private loadPromises: Map<string, Promise<void>> = new Map();
+  private wasmInitialized = false;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -48,28 +51,34 @@ export class JamoEngine implements DurableObject {
     `);
   }
 
-  private async ensureEngine(): Promise<WasmEngine> {
-    if (this.engine) return this.engine;
+  private async ensureEngine(domain?: string): Promise<WasmEngine> {
+    const key = domain || DEFAULT_DOMAIN;
+    const cached = this.engines.get(key);
+    if (cached) return cached;
 
-    if (!this.initPromise) {
-      this.initPromise = this.loadEngine();
+    if (!this.loadPromises.has(key)) {
+      this.loadPromises.set(key, this.loadEngine(key));
     }
-    await this.initPromise;
-    return this.engine!;
+    await this.loadPromises.get(key)!;
+    return this.engines.get(key)!;
   }
 
-  private async loadEngine(): Promise<void> {
-    // WASM モジュール初期化 (CF Workers では .wasm を直接 import して渡す)
-    await init(wasmModule);
+  private async loadEngine(domain: string): Promise<void> {
+    // WASM モジュール初期化 (1回のみ)
+    if (!this.wasmInitialized) {
+      await init(wasmModule);
+      this.wasmInitialized = true;
+    }
 
     // R2 から辞書バイナリをロード
-    const dictObj = await this.env.DICT_BUCKET.get("ipadic.dict");
+    const dictKey = `${domain}.dict`;
+    const dictObj = await this.env.DICT_BUCKET.get(dictKey);
     if (!dictObj) {
-      throw new Error("dictionary not found in R2 bucket");
+      throw new Error(`dictionary '${dictKey}' not found in R2 bucket`);
     }
 
     const dictBytes = new Uint8Array(await dictObj.arrayBuffer());
-    this.engine = new WasmEngine(dictBytes);
+    this.engines.set(domain, new WasmEngine(dictBytes));
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -119,7 +128,8 @@ export class JamoEngine implements DurableObject {
     }
 
     const n = parseInt(url.searchParams.get("n") ?? "5", 10);
-    const engine = await this.ensureEngine();
+    const domain = url.searchParams.get("domain") ?? undefined;
+    const engine = await this.ensureEngine(domain);
     const resultJson = engine.convert(q, n);
     const result: ConvertResponse = JSON.parse(resultJson);
     this.injectUserDict(result);
@@ -146,8 +156,9 @@ export class JamoEngine implements DurableObject {
     const clauseIdx = parseInt(clauseParam, 10);
     const delta = parseInt(deltaParam, 10);
     const n = parseInt(url.searchParams.get("n") ?? "5", 10);
+    const domain = url.searchParams.get("domain") ?? undefined;
 
-    const engine = await this.ensureEngine();
+    const engine = await this.ensureEngine(domain);
     const resultJson = engine.resize(
       q,
       JSON.stringify(boundaries),
@@ -170,7 +181,8 @@ export class JamoEngine implements DurableObject {
     }
 
     const limit = parseInt(url.searchParams.get("limit") ?? "10", 10);
-    const engine = await this.ensureEngine();
+    const domain = url.searchParams.get("domain") ?? undefined;
+    const engine = await this.ensureEngine(domain);
     const resultJson = engine.predict(q, limit);
     const result = JSON.parse(resultJson);
 
@@ -351,7 +363,7 @@ export class JamoEngine implements DurableObject {
     try {
       const msg = JSON.parse(message);
       const id = msg.id;
-      const engine = await this.ensureEngine();
+      const engine = await this.ensureEngine(msg.domain);
 
       switch (msg.type) {
         case "convert": {
