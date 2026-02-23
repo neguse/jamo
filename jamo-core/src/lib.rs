@@ -2,6 +2,7 @@ pub mod bitvec;
 pub mod dict;
 pub mod ipadic;
 pub mod lattice;
+pub mod louds;
 pub mod viterbi;
 
 use dict::Dictionary;

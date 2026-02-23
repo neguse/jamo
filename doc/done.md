@@ -72,3 +72,10 @@
 - よかったこと: from_bits() と from_raw() の2つのコンストラクタでテストと実用の両方が楽。rank/select の整合性テストで正しさを網羅的に検証できた。
 - 判断: select は線形探索 (大ブロック内4ブロック)。LOUDS trie の用途では十分。BMI2 の PDEP/PEXT は WASM で使えないので不採用。
 - 残課題: LOUDS trie (T025) で実際に使う。
+
+### T025: LOUDS trie ✓ (2026-02-24)
+- やったこと: LOUDS trie 実装。バイト単位の trie で UTF-8 文字列の共通接頭辞検索を行う。中間 trie を BFS で LOUDS ビット列に変換。BitVec の rank0/select0 でナビゲーション。10テスト。
+- 変更したファイル: jamo-core/src/louds.rs, jamo-core/src/lib.rs
+- よかったこと: node_bit_start(node) = select0(node-1)+1 と node_from_bit(pos) = rank1(pos)+1 の2関数で LOUDS ナビゲーションが完結する。バイト単位 trie なので UTF-8 を意識せず動作。
+- 判断: ラベルは u8 (バイト値) で、ひらがな1文字 (3バイト) は trie の3段に展開される。エントリは別プールに持ち、terminal に (start, end) インデックスを格納。find_child は子の線形探索だが、ひらがなは0xe3始まりの3バイトなので分岐は少ない。
+- 残課題: IpaDict への組み込み (T026)。
