@@ -1,0 +1,357 @@
+openapi: 3.0.3
+info:
+  title: Jamo - Kana-Kanji Conversion API
+  version: 0.1.0
+  description: |
+    かな漢字変換エンジン jamo の HTTP API。
+    Cloudflare Workers + Durable Object で動作。
+    ユーザーごとに独立した辞書・学習データを持つ。
+
+servers:
+  - url: https://jamo.example.com
+    description: Production
+
+security:
+  - bearerAuth: []
+  - queryAuth: []
+
+paths:
+  /health:
+    get:
+      summary: ヘルスチェック
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "ok"
+
+  /convert:
+    get:
+      summary: かな漢字変換
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 変換するかな文字列
+          example: きょうはいいてんきですね
+        - name: n
+          in: query
+          schema:
+            type: integer
+            default: 5
+          description: 各文節の候補数
+        - name: domain
+          in: query
+          schema:
+            type: string
+            default: ipadic
+          description: 辞書ドメイン
+        - name: user
+          in: query
+          schema:
+            type: string
+          description: ユーザーID (開発用)
+      responses:
+        "200":
+          description: 変換結果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConvertResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /resize:
+    get:
+      summary: 文節伸縮 + 再変換
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 元のかな文字列
+        - name: boundaries
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 文節境界 (バイト位置, カンマ区切り)
+          example: "12,24"
+        - name: clause
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: 伸縮する文節のインデックス
+        - name: delta
+          in: query
+          required: true
+          schema:
+            type: integer
+          description: 伸縮量 (正=伸ばす, 負=縮める, 文字単位)
+        - name: n
+          in: query
+          schema:
+            type: integer
+            default: 5
+        - name: domain
+          in: query
+          schema:
+            type: string
+            default: ipadic
+      responses:
+        "200":
+          description: 再変換結果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConvertResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /predict:
+    get:
+      summary: 予測変換
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 入力途中のかな文字列 (プレフィクス)
+          example: きょう
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: 候補数上限
+        - name: domain
+          in: query
+          schema:
+            type: string
+            default: ipadic
+      responses:
+        "200":
+          description: 予測候補
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredictResponse"
+
+  /commit:
+    post:
+      summary: 変換確定 (学習)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clauses]
+              properties:
+                clauses:
+                  type: array
+                  items:
+                    type: object
+                    required: [yomi, surface]
+                    properties:
+                      yomi:
+                        type: string
+                      surface:
+                        type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /dict/add:
+    post:
+      summary: ユーザー辞書に単語追加
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [yomi, surface]
+              properties:
+                yomi:
+                  type: string
+                surface:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /dict/remove:
+    post:
+      summary: ユーザー辞書から単語削除
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [yomi, surface]
+              properties:
+                yomi:
+                  type: string
+                surface:
+                  type: string
+      responses:
+        "200":
+          description: OK
+
+  /dict/list:
+    get:
+      summary: ユーザー辞書一覧
+      responses:
+        "200":
+          description: 辞書エントリ一覧
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        yomi:
+                          type: string
+                        surface:
+                          type: string
+
+  /dict/import:
+    post:
+      summary: ユーザー辞書一括インポート
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              properties:
+                entries:
+                  type: array
+                  items:
+                    type: object
+                    required: [yomi, surface]
+                    properties:
+                      yomi:
+                        type: string
+                      surface:
+                        type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  added:
+                    type: integer
+
+  /ws:
+    get:
+      summary: WebSocket 接続
+      description: |
+        WebSocket でリアルタイム変換。
+        メッセージ形式 (JSON):
+        - `{ "type": "convert", "id": "...", "q": "...", "n": 5, "domain": "..." }`
+        - `{ "type": "resize", "id": "...", "q": "...", "boundaries": [...], "clause": 0, "delta": 1 }`
+        - `{ "type": "predict", "id": "...", "q": "...", "limit": 10 }`
+        - `{ "type": "commit", "id": "...", "clauses": [...] }`
+        - `{ "type": "dict.add", "id": "...", "yomi": "...", "surface": "..." }`
+        - `{ "type": "dict.remove", "id": "...", "yomi": "...", "surface": "..." }`
+        - `{ "type": "dict.list", "id": "..." }`
+
+        レスポンスには送信時の `id` が含まれる。
+      responses:
+        "101":
+          description: WebSocket upgrade
+
+components:
+  schemas:
+    ConvertResponse:
+      type: object
+      properties:
+        result:
+          type: array
+          items:
+            type: object
+            properties:
+              yomi:
+                type: string
+                description: 読み (かな)
+              candidates:
+                type: array
+                items:
+                  type: string
+                description: 変換候補 (優先順)
+        boundaries:
+          type: array
+          items:
+            type: integer
+          description: 文節境界 (バイト位置)
+
+    PredictResponse:
+      type: object
+      properties:
+        candidates:
+          type: array
+          items:
+            type: object
+            properties:
+              surface:
+                type: string
+              cost:
+                type: integer
+
+  responses:
+    BadRequest:
+      description: パラメータエラー
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: "Authorization: Bearer <user_id>"
+    queryAuth:
+      type: apiKey
+      in: query
+      name: user
+      description: "?user=<user_id> (開発用)"

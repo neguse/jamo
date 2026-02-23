@@ -24,6 +24,7 @@
 | T048 C API | 完了 | cbindgen, jamo.h, libjamo_core.so 497KB |
 | T050 ベンチマーク | 完了 | convert 10-123µs, dict_load 64ms, prefix 1-2µs |
 | T051 精度評価 | 完了 | 10カテゴリ別精度, 文一致 48.1%, 文字精度 69.1% |
+| T053 API仕様 | 完了 | OpenAPI 3.0.3, doc/api.yaml, 全10エンドポイント |
 
 ## 確認済みの動作 (IPAdic + LOUDS + バイナリ)
 

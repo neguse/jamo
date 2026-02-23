@@ -184,3 +184,10 @@
 - よかったこと: カテゴリ別精度で弱点が明確に: VerbConjugation/Place/Time は 100%、Adjective 0%、ShortNoun 30%。カタカナ変換の問題が主要な失敗パターン。
 - 判断: Category enum で構造化。テストケースを TestCase struct に統一。既存の回帰閾値 (文一致≥40%, 文字精度≥60%) は維持。
 - 残課題: カテゴリ別の回帰検出。コーパス拡充。
+
+### T053: API 仕様確定 ✓ (2026-02-24)
+- やったこと: OpenAPI 3.0.3 仕様書を doc/api.yaml に作成。全エンドポイント (convert, resize, predict, commit, dict/add, dict/remove, dict/list, dict/import, ws, health) を定義。スキーマ (ConvertResponse, PredictResponse)、認証 (Bearer, query param) も記載。
+- 変更したファイル: doc/api.yaml (新規)
+- よかったこと: 全エンドポイントを一箇所にまとめたことで実装との乖離を検出しやすい。components/schemas でレスポンス型を共有。
+- 判断: YAML 形式で OpenAPI spec を記述。WebSocket はパス定義+description でメッセージ形式を文書化。
+- 残課題: バリデーションツール (swagger-cli validate) の CI 統合。
