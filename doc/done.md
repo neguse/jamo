@@ -212,3 +212,10 @@
 - よかったこと: 既存の doc/api.yaml, doc/dict-format.md への参照で詳細は委譲し、README は概要+クイックスタートに集中。
 - 判断: README 1ファイルに集約。APIガイド・辞書ビルドガイドは README のセクションとして十分な粒度で記載し、別ファイルにはしない。
 - 残課題: CONTRIBUTING.md (コントリビューションガイド)。
+
+### T056: 1.0 リリース準備 ✓ (2026-02-24)
+- やったこと: jamo-core/jamo-cli のバージョンを 0.1.0 → 1.0.0 に更新。Cargo.toml に crates.io 用メタデータ (description, license, repository, keywords, categories) を追加。MIT LICENSE ファイルを作成。doc/current.md を 1.0 最終状態に更新。
+- 変更したファイル: jamo-core/Cargo.toml, jamo-cli/Cargo.toml, LICENSE (新規), doc/current.md, doc/done.md
+- よかったこと: Iter 0〜4 の全タスクが完了。68テスト全通過の状態で 1.0 を迎えられた。
+- 判断: crates.io publish と git tag は手動で行う (CI/CD 未構築のため)。Cargo.toml の準備のみ自動化。
+- 残課題: `cargo publish`, `git tag v1.0.0`, GitHub Release 作成。

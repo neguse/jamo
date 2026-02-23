@@ -1,7 +1,12 @@
 [package]
 name = "jamo-core"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+description = "Kana-Kanji conversion engine with LOUDS trie and Viterbi decoder"
+license = "MIT"
+repository = "https://github.com/neguse/jamo"
+keywords = ["japanese", "ime", "kana-kanji", "conversion"]
+categories = ["text-processing"]
 
 [features]
 wasm = ["wasm-bindgen", "serde", "serde_json"]

@@ -1,7 +1,10 @@
 [package]
 name = "jamo-cli"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+description = "CLI and HTTP server for jamo kana-kanji conversion engine"
+license = "MIT"
+repository = "https://github.com/neguse/jamo"
 
 [dependencies]
 axum = "0.8.8"
