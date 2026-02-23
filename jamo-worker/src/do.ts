@@ -39,6 +39,13 @@ export class JamoEngine implements DurableObject {
         PRIMARY KEY (yomi, surface)
       )
     `);
+    this.state.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS user_dict (
+        yomi TEXT NOT NULL,
+        surface TEXT NOT NULL,
+        PRIMARY KEY (yomi, surface)
+      )
+    `);
   }
 
   private async ensureEngine(): Promise<WasmEngine> {
@@ -86,6 +93,14 @@ export class JamoEngine implements DurableObject {
           return this.handleResize(url);
         case "/commit":
           return this.handleCommit(request);
+        case "/dict/add":
+          return this.handleDictAdd(request);
+        case "/dict/remove":
+          return this.handleDictRemove(request);
+        case "/dict/list":
+          return this.handleDictList();
+        case "/dict/import":
+          return this.handleDictImport(request);
         default:
           return jsonResponse({ error: "not found" }, 404);
       }
@@ -105,6 +120,7 @@ export class JamoEngine implements DurableObject {
     const engine = await this.ensureEngine();
     const resultJson = engine.convert(q, n);
     const result: ConvertResponse = JSON.parse(resultJson);
+    this.injectUserDict(result);
     this.reorderCandidates(result);
     return new Response(JSON.stringify(result), {
       headers: { "Content-Type": "application/json" },
@@ -138,6 +154,7 @@ export class JamoEngine implements DurableObject {
       n
     );
     const result: ConvertResponse = JSON.parse(resultJson);
+    this.injectUserDict(result);
     this.reorderCandidates(result);
     return new Response(JSON.stringify(result), {
       headers: { "Content-Type": "application/json" },
@@ -176,6 +193,78 @@ export class JamoEngine implements DurableObject {
     );
 
     return jsonResponse({ ok: true });
+  }
+
+  private async handleDictAdd(request: Request): Promise<Response> {
+    const body = (await request.json()) as { yomi?: string; surface?: string };
+    if (!body.yomi || !body.surface) {
+      return jsonResponse({ error: "missing yomi or surface" }, 400);
+    }
+    this.state.storage.sql.exec(
+      "INSERT OR IGNORE INTO user_dict (yomi, surface) VALUES (?, ?)",
+      body.yomi,
+      body.surface
+    );
+    return jsonResponse({ ok: true });
+  }
+
+  private async handleDictRemove(request: Request): Promise<Response> {
+    const body = (await request.json()) as { yomi?: string; surface?: string };
+    if (!body.yomi || !body.surface) {
+      return jsonResponse({ error: "missing yomi or surface" }, 400);
+    }
+    this.state.storage.sql.exec(
+      "DELETE FROM user_dict WHERE yomi = ? AND surface = ?",
+      body.yomi,
+      body.surface
+    );
+    return jsonResponse({ ok: true });
+  }
+
+  private handleDictList(): Response {
+    const cursor = this.state.storage.sql.exec(
+      "SELECT yomi, surface FROM user_dict ORDER BY yomi"
+    );
+    const entries = [];
+    for (const row of cursor) {
+      entries.push({ yomi: row.yomi, surface: row.surface });
+    }
+    return jsonResponse({ entries });
+  }
+
+  private async handleDictImport(request: Request): Promise<Response> {
+    const body = (await request.json()) as {
+      entries?: { yomi: string; surface: string }[];
+    };
+    if (!body.entries || !Array.isArray(body.entries)) {
+      return jsonResponse({ error: "missing entries array" }, 400);
+    }
+    let added = 0;
+    for (const entry of body.entries) {
+      if (!entry.yomi || !entry.surface) continue;
+      this.state.storage.sql.exec(
+        "INSERT OR IGNORE INTO user_dict (yomi, surface) VALUES (?, ?)",
+        entry.yomi,
+        entry.surface
+      );
+      added++;
+    }
+    return jsonResponse({ ok: true, added });
+  }
+
+  private injectUserDict(result: ConvertResponse): void {
+    for (const clause of result.result) {
+      const cursor = this.state.storage.sql.exec(
+        "SELECT surface FROM user_dict WHERE yomi = ?",
+        clause.yomi
+      );
+      for (const row of cursor) {
+        const surface = row.surface as string;
+        if (!clause.candidates.includes(surface)) {
+          clause.candidates.unshift(surface);
+        }
+      }
+    }
   }
 
   private reorderCandidates(result: ConvertResponse): void {
@@ -219,6 +308,7 @@ export class JamoEngine implements DurableObject {
         case "convert": {
           const resultJson = engine.convert(msg.q ?? "", msg.n ?? 5);
           const result: ConvertResponse = JSON.parse(resultJson);
+          this.injectUserDict(result);
           this.reorderCandidates(result);
           ws.send(JSON.stringify({ id, ...result }));
           break;
@@ -232,6 +322,7 @@ export class JamoEngine implements DurableObject {
             msg.n ?? 5
           );
           const result: ConvertResponse = JSON.parse(resultJson);
+          this.injectUserDict(result);
           this.reorderCandidates(result);
           ws.send(JSON.stringify({ id, ...result }));
           break;
@@ -258,6 +349,39 @@ export class JamoEngine implements DurableObject {
             MAX_HISTORY
           );
           ws.send(JSON.stringify({ id, ok: true }));
+          break;
+        }
+        case "dict.add": {
+          if (msg.yomi && msg.surface) {
+            this.state.storage.sql.exec(
+              "INSERT OR IGNORE INTO user_dict (yomi, surface) VALUES (?, ?)",
+              msg.yomi,
+              msg.surface
+            );
+          }
+          ws.send(JSON.stringify({ id, ok: true }));
+          break;
+        }
+        case "dict.remove": {
+          if (msg.yomi && msg.surface) {
+            this.state.storage.sql.exec(
+              "DELETE FROM user_dict WHERE yomi = ? AND surface = ?",
+              msg.yomi,
+              msg.surface
+            );
+          }
+          ws.send(JSON.stringify({ id, ok: true }));
+          break;
+        }
+        case "dict.list": {
+          const cursor = this.state.storage.sql.exec(
+            "SELECT yomi, surface FROM user_dict ORDER BY yomi"
+          );
+          const entries = [];
+          for (const row of cursor) {
+            entries.push({ yomi: row.yomi, surface: row.surface });
+          }
+          ws.send(JSON.stringify({ id, entries }));
           break;
         }
         default:

@@ -18,6 +18,7 @@
 | T042 Durable Object | 完了 | WASM統合 + R2辞書ロード, wrangler dry-run OK |
 | T043 WebSocket | 完了 | /ws エンドポイント, JSON メッセージ, Hibernation API |
 | T044 学習テーブル | 完了 | SQLite user_history, commit→reorder, LRU 10K |
+| T045 ユーザー辞書 API | 完了 | /dict/add,remove,list,import + WS対応 |
 
 ## 確認済みの動作 (IPAdic + LOUDS + バイナリ)
 
@@ -46,4 +47,4 @@
 ## 次のアクション
 
 Iter 2 残: T022 bigram LM (精度改善)
-Iter 3 続: T045 ユーザー辞書 API / T046 予測変換
+Iter 3 続: T046 予測変換 / T048 C API

@@ -141,4 +141,11 @@
 - 変更したファイル: jamo-worker/src/do.ts, jamo-worker/wrangler.toml
 - よかったこと: `new_sqlite_classes` で SQLite バックエンドに切り替えるだけで sql.exec() が使える。候補の reorder は TypeScript 側で WASM 結果を後処理する方式がシンプル。
 - 判断: 学習データは WASM エンジンに渡さず TypeScript 側で候補の並べ替えのみ。スキーマは (yomi, surface) を主キーに count + last_used で LRU 管理。ON CONFLICT で UPSERT。
-- 残課題: ユーザー辞書 API (T045)。学習データのエクスポート/インポート。
+- 残課題: 学習データのエクスポート/インポート。
+
+### T045: ユーザー辞書 API ✓ (2026-02-24)
+- やったこと: SQLite user_dict テーブル追加。HTTP API: POST /dict/add, /dict/remove, GET /dict/list, POST /dict/import。WebSocket: dict.add, dict.remove, dict.list メッセージ。変換時にユーザー辞書の候補を注入 (injectUserDict)。
+- 変更したファイル: jamo-worker/src/do.ts
+- よかったこと: ユーザー辞書の候補は candidates の先頭に unshift するだけで優先表示。学習テーブルの reorder と組み合わせて、ユーザー登録単語は常に上位に来る。
+- 判断: user_dict は (yomi, surface) を PK にシンプルな構造。import はバッチ INSERT。WASM エンジンに注入するのではなく、TypeScript 側で候補リストに追加する方式。
+- 残課題: ユーザー辞書のエクスポート。品詞指定の対応。
