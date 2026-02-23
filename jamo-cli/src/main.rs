@@ -33,6 +33,7 @@ fn print_usage() {
     eprintln!("  convert [--dict DIR] <text>   かな漢字変換");
     eprintln!("  serve [--dict DIR] [--port N]  HTTPサーバー起動");
     eprintln!("  dict build [--dict DIR] -o <output>  辞書バイナリ構築");
+    eprintln!("  dict merge --base <dir> --extra <path>... -o <output>  辞書マージ");
 }
 
 /// 引数から --dict DIR を抽出。残りの引数も返す。
@@ -134,17 +135,90 @@ fn cmd_serve(args: &[String]) {
 
 fn cmd_dict(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Usage: jamo dict build [--dict DIR] -o <output>");
+        eprintln!("Usage:");
+        eprintln!("  jamo dict build [--dict DIR] -o <output>");
+        eprintln!("  jamo dict merge --base <dir> --extra <path>... -o <output>");
         std::process::exit(1);
     }
 
     match args[0].as_str() {
         "build" => cmd_dict_build(&args[1..]),
+        "merge" => cmd_dict_merge(&args[1..]),
         _ => {
             eprintln!("Unknown dict subcommand: {}", args[0]);
             std::process::exit(1);
         }
     }
+}
+
+fn cmd_dict_merge(args: &[String]) {
+    let mut base_dir = None;
+    let mut extras = Vec::new();
+    let mut output = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--base" if i + 1 < args.len() => {
+                base_dir = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--extra" if i + 1 < args.len() => {
+                extras.push(args[i + 1].clone());
+                i += 2;
+            }
+            "-o" if i + 1 < args.len() => {
+                output = Some(args[i + 1].clone());
+                i += 2;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+
+    let base_dir = base_dir.unwrap_or_else(|| {
+        eprintln!("Usage: jamo dict merge --base <dir> --extra <path>... -o <output>");
+        std::process::exit(1);
+    });
+    let output = output.unwrap_or_else(|| {
+        eprintln!("Usage: jamo dict merge --base <dir> --extra <path>... -o <output>");
+        std::process::exit(1);
+    });
+    if extras.is_empty() {
+        eprintln!("Error: at least one --extra path required");
+        std::process::exit(1);
+    }
+
+    let start = Instant::now();
+
+    let extra_paths: Vec<&Path> = extras.iter().map(|s| Path::new(s.as_str())).collect();
+    eprintln!(
+        "Merging base={} + {} extra source(s)...",
+        base_dir,
+        extras.len()
+    );
+    let dict = IpaDict::load_merge(Path::new(&base_dir), &extra_paths)
+        .expect("failed to merge dictionaries");
+    let load_time = start.elapsed();
+
+    eprintln!(
+        "Merged {} vocab, {} readings in {:.2}s",
+        dict.vocab_size(),
+        dict.reading_count(),
+        load_time.as_secs_f64()
+    );
+
+    let save_start = Instant::now();
+    dict.save_binary(Path::new(&output))
+        .expect("failed to save binary dict");
+    let save_time = save_start.elapsed();
+
+    let file_size = std::fs::metadata(&output).unwrap().len();
+    eprintln!(
+        "Saved to {output} ({:.1} MB) in {:.2}s",
+        file_size as f64 / 1_048_576.0,
+        save_time.as_secs_f64()
+    );
 }
 
 fn cmd_dict_build(args: &[String]) {

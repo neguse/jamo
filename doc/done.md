@@ -198,3 +198,10 @@
 - よかったこと: ipadic.rs の write_binary/read_binary の実装と1:1で対応する仕様書。他言語での実装参照としても使える。
 - 判断: Markdown + テーブルで記述。コードとの対応を明示するためセクション順を実装の書き込み順に合わせた。
 - 残課題: フォーマットのバリデーションツール (magic + version チェック CLI)。
+
+### T052: NEologd統合 — 辞書マージ機能 ✓ (2026-02-24)
+- やったこと: IpaDict::load_merge() メソッドを追加。ベースIPAdicディレクトリ + 追加CSV (ファイル/ディレクトリ) をマージして辞書を構築。CLI に `jamo dict merge --base <dir> --extra <path>... -o <output>` コマンドを追加。ipadic.rs をリファクタリングし parse_csv_dir / build_from_entries ヘルパーを抽出。
+- 変更したファイル: jamo-core/src/ipadic.rs, jamo-cli/src/main.rs
+- よかったこと: NEologd等のCSVはIPAdicと同一形式なので、既存パーサーをそのまま再利用。matrix.defはベースを使用するため品詞IDの整合性が保たれる。load()も内部でparse_csv_dir/build_from_entriesを再利用し重複なし。
+- 判断: merge専用の別メソッドにした。load()のシグネチャ変更は既存テストへの影響大。追加CSV側にmatrix.defは不要(ベースを使用)。
+- 残課題: NEologd CSV の自動ダウンロード/ビルドスクリプト。

@@ -28,7 +28,7 @@
 |--------|------|------|
 | T050 ベンチマーク | 完了 | convert 10-123µs, dict_load 64ms |
 | T051 精度評価 | 完了 | 10カテゴリ別, 文一致 48.1%, 文字精度 69.1% |
-| T052 NEologd | 未着手 | |
+| T052 NEologd | 完了 | load_merge + dict merge CLI |
 | T053 API仕様 | 完了 | OpenAPI 3.0.3, doc/api.yaml |
 | T054 辞書フォーマット | 完了 | doc/dict-format.md, v2 |
 | T055 ドキュメント | 未着手 | |
@@ -65,9 +65,9 @@
 
 ## テスト
 
-全66テスト通過 (jamo-core: 58 unit + 2 accuracy, jamo-cli: 4 CLI + 2 HTTP)
+全68テスト通過 (jamo-core: 60 unit + 2 accuracy, jamo-cli: 4 CLI + 2 HTTP)
 
 ## 残タスク
 
 - Iter 2 残: T022 bigram LM (精度改善の鍵)
-- Iter 4 残: T052 NEologd, T055 ドキュメント, T056 1.0リリース
+- Iter 4 残: T055 ドキュメント, T056 1.0リリース

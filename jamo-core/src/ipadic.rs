@@ -37,57 +37,43 @@ impl IpaDict {
     /// IPAdic ディレクトリからロード
     pub fn load(dir: &Path) -> Result<Self, String> {
         let mut raw_entries = Vec::new();
+        parse_csv_dir(dir, &mut raw_entries)?;
 
-        // 全 CSV ファイルをパース
-        for entry in fs::read_dir(dir).map_err(|e| format!("read_dir: {e}"))? {
-            let entry = entry.map_err(|e| format!("dir entry: {e}"))?;
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "csv") {
-                let content = fs::read_to_string(&path)
-                    .map_err(|e| format!("read {}: {e}", path.display()))?;
-                parse_csv(&content, &mut raw_entries)?;
-            }
-        }
-
-        // 読みごとにグループ化
-        let mut grouped: HashMap<String, Vec<Entry>> = HashMap::new();
-        for raw in &raw_entries {
-            let reading = katakana_to_hiragana(&raw.reading);
-            grouped.entry(reading).or_default().push(Entry {
-                surface: raw.surface.clone(),
-                left_id: raw.left_id,
-                right_id: raw.right_id,
-                cost: raw.cost,
-                pos_type: raw.pos_type,
-            });
-        }
-
-        let vocab_size = grouped.values().map(|v| v.len()).sum();
-        let reading_count = grouped.len();
-
-        // ソート済みキーリストを構築して LOUDS trie を作る
-        let mut sorted: Vec<(String, Vec<Entry>)> = grouped.into_iter().collect();
-        sorted.sort_by(|(a, _), (b, _)| a.as_bytes().cmp(b.as_bytes()));
-
-        let keys: Vec<(&[u8], &[Entry])> = sorted
-            .iter()
-            .map(|(k, v)| (k.as_bytes(), v.as_slice()))
-            .collect();
-        let trie = LoudsTrie::build(&keys);
-
-        // matrix.def をパース
         let matrix_path = dir.join("matrix.def");
         let matrix_content =
             fs::read_to_string(&matrix_path).map_err(|e| format!("read matrix.def: {e}"))?;
         let (num_pos, matrix) = parse_matrix(&matrix_content)?;
 
-        Ok(IpaDict {
-            trie,
-            matrix,
-            num_pos,
-            vocab_size,
-            reading_count,
-        })
+        build_from_entries(raw_entries, matrix, num_pos)
+    }
+
+    /// ベース辞書 + 追加CSVをマージしてロード (NEologd等の統合用)
+    /// matrix.def はベースディレクトリのものを使用。
+    pub fn load_merge(base_dir: &Path, extras: &[&Path]) -> Result<Self, String> {
+        let mut raw_entries = Vec::new();
+        parse_csv_dir(base_dir, &mut raw_entries)?;
+
+        for extra in extras {
+            if extra.is_dir() {
+                parse_csv_dir(extra, &mut raw_entries)?;
+            } else if extra.extension().is_some_and(|ext| ext == "csv") {
+                let content = fs::read_to_string(extra)
+                    .map_err(|e| format!("read {}: {e}", extra.display()))?;
+                parse_csv(&content, &mut raw_entries)?;
+            } else {
+                return Err(format!(
+                    "unsupported extra path: {} (expected .csv file or directory)",
+                    extra.display()
+                ));
+            }
+        }
+
+        let matrix_path = base_dir.join("matrix.def");
+        let matrix_content =
+            fs::read_to_string(&matrix_path).map_err(|e| format!("read matrix.def: {e}"))?;
+        let (num_pos, matrix) = parse_matrix(&matrix_content)?;
+
+        build_from_entries(raw_entries, matrix, num_pos)
     }
 
     /// 接続コスト (right_id of prev, left_id of next)
@@ -348,6 +334,59 @@ impl Dictionary for IpaDict {
     }
 }
 
+/// ディレクトリ内の全CSVファイルをパース
+fn parse_csv_dir(dir: &Path, entries: &mut Vec<RawEntry>) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|e| format!("read_dir {}: {e}", dir.display()))? {
+        let entry = entry.map_err(|e| format!("dir entry: {e}"))?;
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "csv") {
+            let content =
+                fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+            parse_csv(&content, entries)?;
+        }
+    }
+    Ok(())
+}
+
+/// RawEntry群からIPaDictを構築
+fn build_from_entries(
+    raw_entries: Vec<RawEntry>,
+    matrix: Vec<i16>,
+    num_pos: usize,
+) -> Result<IpaDict, String> {
+    let mut grouped: HashMap<String, Vec<Entry>> = HashMap::new();
+    for raw in &raw_entries {
+        let reading = katakana_to_hiragana(&raw.reading);
+        grouped.entry(reading).or_default().push(Entry {
+            surface: raw.surface.clone(),
+            left_id: raw.left_id,
+            right_id: raw.right_id,
+            cost: raw.cost,
+            pos_type: raw.pos_type,
+        });
+    }
+
+    let vocab_size = grouped.values().map(|v| v.len()).sum();
+    let reading_count = grouped.len();
+
+    let mut sorted: Vec<(String, Vec<Entry>)> = grouped.into_iter().collect();
+    sorted.sort_by(|(a, _), (b, _)| a.as_bytes().cmp(b.as_bytes()));
+
+    let keys: Vec<(&[u8], &[Entry])> = sorted
+        .iter()
+        .map(|(k, v)| (k.as_bytes(), v.as_slice()))
+        .collect();
+    let trie = LoudsTrie::build(&keys);
+
+    Ok(IpaDict {
+        trie,
+        matrix,
+        num_pos,
+        vocab_size,
+        reading_count,
+    })
+}
+
 /// カタカナをひらがなに変換
 fn katakana_to_hiragana(s: &str) -> String {
     s.chars()
@@ -590,6 +629,109 @@ mod tests {
         assert_eq!(classify_pos("副詞", "一般"), POS_CONTENT);
         assert_eq!(classify_pos("接続詞", "*"), POS_CONTENT);
         assert_eq!(classify_pos("接頭詞", "名詞接続"), POS_CONTENT);
+    }
+
+    #[test]
+    fn test_load_merge() {
+        let ipadic_dir = Path::new("../data/ipadic");
+        if !ipadic_dir.exists() {
+            eprintln!("Skipping: IPAdic not found");
+            return;
+        }
+
+        // ベースの辞書をロード
+        let base = IpaDict::load(ipadic_dir).expect("failed to load base");
+        let base_vocab = base.vocab_size();
+
+        // 追加CSVを一時ファイルに書き出し
+        let tmp_dir = std::env::temp_dir().join("jamo_merge_test");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let extra_csv = tmp_dir.join("extra.csv");
+        std::fs::write(
+            &extra_csv,
+            // NEologd風のエントリ (IPAdicと同じCSV形式)
+            "スマートフォン,1285,1285,3000,名詞,一般,*,*,*,*,スマートフォン,スマートフォン,スマートフォン\n\
+             クラウドファンディング,1285,1285,4000,名詞,一般,*,*,*,*,クラウドファンディング,クラウドファンディング,クラウドファンディング\n",
+        )
+        .unwrap();
+
+        // マージしてロード
+        let merged =
+            IpaDict::load_merge(ipadic_dir, &[extra_csv.as_path()]).expect("failed to merge");
+
+        // 追加エントリ分だけ語彙が増えている
+        assert!(
+            merged.vocab_size() > base_vocab,
+            "merged {} should be > base {}",
+            merged.vocab_size(),
+            base_vocab
+        );
+
+        // 追加したエントリが検索可能
+        let results = merged.common_prefix_search("すまーとふぉん");
+        let surfaces: Vec<&str> = results
+            .iter()
+            .flat_map(|(_, entries)| entries.iter().map(|e| e.surface.as_str()))
+            .collect();
+        assert!(
+            surfaces.contains(&"スマートフォン"),
+            "「スマートフォン」が候補にあるはず: {:?}",
+            surfaces
+        );
+
+        // ベースのエントリも引き続き検索可能
+        let results = merged.common_prefix_search("きょう");
+        let surfaces: Vec<&str> = results
+            .iter()
+            .flat_map(|(_, entries)| entries.iter().map(|e| e.surface.as_str()))
+            .collect();
+        assert!(
+            surfaces.contains(&"今日"),
+            "「今日」がベースから引き続きあるはず: {:?}",
+            surfaces
+        );
+
+        // 接続コスト行列はベースと同一
+        assert_eq!(merged.pos_size(), base.pos_size());
+        assert_eq!(merged.connection_cost(0, 0), base.connection_cost(0, 0));
+
+        // クリーンアップ
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_load_merge_directory() {
+        let ipadic_dir = Path::new("../data/ipadic");
+        if !ipadic_dir.exists() {
+            eprintln!("Skipping: IPAdic not found");
+            return;
+        }
+
+        // 追加CSVディレクトリを作成
+        let tmp_dir = std::env::temp_dir().join("jamo_merge_dir_test");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        std::fs::write(
+            tmp_dir.join("neologd.csv"),
+            "ブロックチェーン,1285,1285,3500,名詞,一般,*,*,*,*,ブロックチェーン,ブロックチェーン,ブロックチェーン\n",
+        )
+        .unwrap();
+
+        // ディレクトリごとマージ
+        let merged =
+            IpaDict::load_merge(ipadic_dir, &[tmp_dir.as_path()]).expect("failed to merge dir");
+
+        let results = merged.common_prefix_search("ぶろっくちぇーん");
+        let surfaces: Vec<&str> = results
+            .iter()
+            .flat_map(|(_, entries)| entries.iter().map(|e| e.surface.as_str()))
+            .collect();
+        assert!(
+            surfaces.contains(&"ブロックチェーン"),
+            "ディレクトリからのマージで候補にあるはず: {:?}",
+            surfaces
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 
     #[test]
