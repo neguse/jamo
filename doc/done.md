@@ -44,3 +44,10 @@
 - よかったこと: env!("CARGO_BIN_EXE_jamo-cli") でバイナリパスを取得してサブプロセステストが簡潔に書ける。
 - 判断: clap は入れずに std::env::args で十分。Iter 1 では最小限。
 - 残課題: サブコマンド体系 (dict, serve) は後続タスク。
+
+### T013: jamo serve HTTP API ✓ (2026-02-24)
+- やったこと: axum で `GET /convert` + `GET /health`。`jamo serve --port N` サブコマンド。HTTP結合テスト2件 (curl + サブプロセス)。
+- 変更したファイル: jamo-cli/src/main.rs, jamo-cli/src/serve.rs, jamo-cli/tests/serve_test.rs, jamo-cli/Cargo.toml
+- よかったこと: reqwest の代わりに curl サブプロセスでテストしたらビルド時間が大幅に短縮。ServerGuard の Drop でサーバー確実停止。
+- 判断: reqwest を dev-dependency に入れると依存が爆発するので curl でテスト。テストポートは18091,18092で分けて並列実行可能に。
+- 残課題: N-best 未対応。ユーザー辞書API未実装。辞書はリクエストごとに生成している (共有化が必要)。
