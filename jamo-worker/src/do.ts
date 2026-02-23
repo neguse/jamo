@@ -5,6 +5,18 @@ interface Env {
   DICT_BUCKET: R2Bucket;
 }
 
+interface Clause {
+  yomi: string;
+  candidates: string[];
+}
+
+interface ConvertResponse {
+  result: Clause[];
+  boundaries: number[];
+}
+
+const MAX_HISTORY = 10000;
+
 export class JamoEngine implements DurableObject {
   private state: DurableObjectState;
   private env: Env;
@@ -14,6 +26,19 @@ export class JamoEngine implements DurableObject {
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
+    this.initDb();
+  }
+
+  private initDb(): void {
+    this.state.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS user_history (
+        yomi TEXT NOT NULL,
+        surface TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 1,
+        last_used INTEGER NOT NULL,
+        PRIMARY KEY (yomi, surface)
+      )
+    `);
   }
 
   private async ensureEngine(): Promise<WasmEngine> {
@@ -59,6 +84,8 @@ export class JamoEngine implements DurableObject {
           return this.handleConvert(url);
         case "/resize":
           return this.handleResize(url);
+        case "/commit":
+          return this.handleCommit(request);
         default:
           return jsonResponse({ error: "not found" }, 404);
       }
@@ -66,47 +93,6 @@ export class JamoEngine implements DurableObject {
       const message = e instanceof Error ? e.message : String(e);
       return jsonResponse({ error: message }, 500);
     }
-  }
-
-  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    if (typeof message !== "string") {
-      ws.send(JSON.stringify({ error: "binary messages not supported" }));
-      return;
-    }
-
-    try {
-      const msg = JSON.parse(message);
-      const id = msg.id;
-      const engine = await this.ensureEngine();
-
-      switch (msg.type) {
-        case "convert": {
-          const resultJson = engine.convert(msg.q ?? "", msg.n ?? 5);
-          ws.send(JSON.stringify({ id, ...JSON.parse(resultJson) }));
-          break;
-        }
-        case "resize": {
-          const resultJson = engine.resize(
-            msg.q ?? "",
-            JSON.stringify(msg.boundaries ?? []),
-            msg.clause ?? 0,
-            msg.delta ?? 0,
-            msg.n ?? 5
-          );
-          ws.send(JSON.stringify({ id, ...JSON.parse(resultJson) }));
-          break;
-        }
-        default:
-          ws.send(JSON.stringify({ id, error: "unknown type" }));
-      }
-    } catch (e) {
-      const error = e instanceof Error ? e.message : String(e);
-      ws.send(JSON.stringify({ error }));
-    }
-  }
-
-  async webSocketClose(ws: WebSocket): Promise<void> {
-    ws.close();
   }
 
   private async handleConvert(url: URL): Promise<Response> {
@@ -118,7 +104,9 @@ export class JamoEngine implements DurableObject {
     const n = parseInt(url.searchParams.get("n") ?? "5", 10);
     const engine = await this.ensureEngine();
     const resultJson = engine.convert(q, n);
-    return new Response(resultJson, {
+    const result: ConvertResponse = JSON.parse(resultJson);
+    this.reorderCandidates(result);
+    return new Response(JSON.stringify(result), {
       headers: { "Content-Type": "application/json" },
     });
   }
@@ -149,9 +137,140 @@ export class JamoEngine implements DurableObject {
       delta,
       n
     );
-    return new Response(resultJson, {
+    const result: ConvertResponse = JSON.parse(resultJson);
+    this.reorderCandidates(result);
+    return new Response(JSON.stringify(result), {
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  private async handleCommit(request: Request): Promise<Response> {
+    const body = (await request.json()) as {
+      clauses?: { yomi: string; surface: string }[];
+    };
+    if (!body.clauses || !Array.isArray(body.clauses)) {
+      return jsonResponse({ error: "missing clauses array" }, 400);
+    }
+
+    const now = Date.now();
+    for (const clause of body.clauses) {
+      if (!clause.yomi || !clause.surface) continue;
+      this.state.storage.sql.exec(
+        `INSERT INTO user_history (yomi, surface, count, last_used)
+         VALUES (?, ?, 1, ?)
+         ON CONFLICT (yomi, surface)
+         DO UPDATE SET count = count + 1, last_used = ?`,
+        clause.yomi,
+        clause.surface,
+        now,
+        now
+      );
+    }
+
+    // LRU: 古いエントリを削除
+    this.state.storage.sql.exec(
+      `DELETE FROM user_history WHERE rowid NOT IN (
+         SELECT rowid FROM user_history ORDER BY last_used DESC LIMIT ?
+       )`,
+      MAX_HISTORY
+    );
+
+    return jsonResponse({ ok: true });
+  }
+
+  private reorderCandidates(result: ConvertResponse): void {
+    for (const clause of result.result) {
+      if (clause.candidates.length <= 1) continue;
+
+      const cursor = this.state.storage.sql.exec(
+        "SELECT surface, count FROM user_history WHERE yomi = ? ORDER BY count DESC, last_used DESC",
+        clause.yomi
+      );
+      const learned = new Map<string, number>();
+      for (const row of cursor) {
+        learned.set(row.surface as string, row.count as number);
+      }
+      if (learned.size === 0) continue;
+
+      clause.candidates.sort((a, b) => {
+        const ca = learned.get(a) ?? 0;
+        const cb = learned.get(b) ?? 0;
+        if (ca !== cb) return cb - ca;
+        return 0; // 学習データがない場合は元の順序を維持
+      });
+    }
+  }
+
+  async webSocketMessage(
+    ws: WebSocket,
+    message: string | ArrayBuffer
+  ): Promise<void> {
+    if (typeof message !== "string") {
+      ws.send(JSON.stringify({ error: "binary messages not supported" }));
+      return;
+    }
+
+    try {
+      const msg = JSON.parse(message);
+      const id = msg.id;
+      const engine = await this.ensureEngine();
+
+      switch (msg.type) {
+        case "convert": {
+          const resultJson = engine.convert(msg.q ?? "", msg.n ?? 5);
+          const result: ConvertResponse = JSON.parse(resultJson);
+          this.reorderCandidates(result);
+          ws.send(JSON.stringify({ id, ...result }));
+          break;
+        }
+        case "resize": {
+          const resultJson = engine.resize(
+            msg.q ?? "",
+            JSON.stringify(msg.boundaries ?? []),
+            msg.clause ?? 0,
+            msg.delta ?? 0,
+            msg.n ?? 5
+          );
+          const result: ConvertResponse = JSON.parse(resultJson);
+          this.reorderCandidates(result);
+          ws.send(JSON.stringify({ id, ...result }));
+          break;
+        }
+        case "commit": {
+          const now = Date.now();
+          for (const clause of msg.clauses ?? []) {
+            if (!clause.yomi || !clause.surface) continue;
+            this.state.storage.sql.exec(
+              `INSERT INTO user_history (yomi, surface, count, last_used)
+               VALUES (?, ?, 1, ?)
+               ON CONFLICT (yomi, surface)
+               DO UPDATE SET count = count + 1, last_used = ?`,
+              clause.yomi,
+              clause.surface,
+              now,
+              now
+            );
+          }
+          this.state.storage.sql.exec(
+            `DELETE FROM user_history WHERE rowid NOT IN (
+               SELECT rowid FROM user_history ORDER BY last_used DESC LIMIT ?
+             )`,
+            MAX_HISTORY
+          );
+          ws.send(JSON.stringify({ id, ok: true }));
+          break;
+        }
+        default:
+          ws.send(JSON.stringify({ id, error: "unknown type" }));
+      }
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      ws.send(JSON.stringify({ error }));
+    }
+  }
+
+  async webSocketClose(ws: WebSocket): Promise<void> {
+    ws.close();
   }
 }
 

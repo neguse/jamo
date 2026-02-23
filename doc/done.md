@@ -135,3 +135,10 @@
 - よかったこと: Durable Object の webSocketMessage/webSocketClose ハンドラで WebSocket ライフサイクルが簡潔に実装できた。HTTP と WebSocket で同じ ensureEngine() を共有。
 - 判断: メッセージ形式は `{ type: "convert"|"resize", id?: string, ... }`。id フィールドでリクエスト・レスポンスの対応付け。バイナリメッセージは非サポート (テキスト JSON のみ)。
 - 残課題: 再接続時の状態復元。heartbeat/ping-pong。
+
+### T044: 学習テーブル ✓ (2026-02-24)
+- やったこと: DO の SQLite ストレージに user_history テーブル追加。ユーザーの変換確定 (commit) を記録し、次回変換時に候補順位を調整。LRU で上限 10,000 エントリ。HTTP POST /commit + WebSocket commit メッセージ対応。
+- 変更したファイル: jamo-worker/src/do.ts, jamo-worker/wrangler.toml
+- よかったこと: `new_sqlite_classes` で SQLite バックエンドに切り替えるだけで sql.exec() が使える。候補の reorder は TypeScript 側で WASM 結果を後処理する方式がシンプル。
+- 判断: 学習データは WASM エンジンに渡さず TypeScript 側で候補の並べ替えのみ。スキーマは (yomi, surface) を主キーに count + last_used で LRU 管理。ON CONFLICT で UPSERT。
+- 残課題: ユーザー辞書 API (T045)。学習データのエクスポート/インポート。

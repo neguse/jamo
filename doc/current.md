@@ -17,7 +17,7 @@
 | T041 CF Worker | 完了 | ルーター + Bearer認証 → DO ルーティング |
 | T042 Durable Object | 完了 | WASM統合 + R2辞書ロード, wrangler dry-run OK |
 | T043 WebSocket | 完了 | /ws エンドポイント, JSON メッセージ, Hibernation API |
-| T044 学習テーブル | 未着手 | |
+| T044 学習テーブル | 完了 | SQLite user_history, commit→reorder, LRU 10K |
 
 ## 確認済みの動作 (IPAdic + LOUDS + バイナリ)
 
@@ -46,4 +46,4 @@
 ## 次のアクション
 
 Iter 2 残: T022 bigram LM (精度改善)
-Iter 3 続: T044 学習テーブル / T045 ユーザー辞書 API
+Iter 3 続: T045 ユーザー辞書 API / T046 予測変換

@@ -9,7 +9,7 @@ bindings = [
 
 [[migrations]]
 tag = "v1"
-new_classes = ["JamoEngine"]
+new_sqlite_classes = ["JamoEngine"]
 
 [[r2_buckets]]
 binding = "DICT_BUCKET"
