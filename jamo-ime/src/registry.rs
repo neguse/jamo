@@ -10,14 +10,14 @@
 use windows::Win32::Foundation::MAX_PATH;
 use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 use windows::Win32::System::Registry::{
-    HKEY_CURRENT_USER, KEY_WRITE, REG_DWORD, REG_SZ, RegCreateKeyExW, RegDeleteTreeW,
-    RegSetValueExW,
+    HKEY_CURRENT_USER, KEY_WRITE, REG_DWORD, REG_SZ, REG_VALUE_TYPE, RegCreateKeyExW,
+    RegDeleteTreeW, RegSetValueExW,
 };
 use windows::Win32::UI::TextServices::{
     GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER, GUID_TFCAT_TIP_KEYBOARD,
     GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
 };
-use windows::core::{HRESULT, HSTRING, w};
+use windows::core::{HRESULT, HSTRING, PCWSTR};
 
 use crate::globals::{CLSID_JAMO_TEXT_SERVICE, GUID_JAMO_PROFILE, get_dll_instance};
 
@@ -69,8 +69,13 @@ fn get_dll_path() -> Result<String, HRESULT> {
     Ok(dll_path)
 }
 
-/// レジストリキーを作成して文字列値を設定するヘルパー
-fn reg_set_string(key_path: &str, value_name: Option<&HSTRING>, data: &str) -> Result<(), HRESULT> {
+/// レジストリキーを作成して値を設定するヘルパー
+fn reg_create_and_set(
+    key_path: &str,
+    value_name: PCWSTR,
+    reg_type: REG_VALUE_TYPE,
+    data: &[u8],
+) -> Result<(), HRESULT> {
     unsafe {
         let key_path_w = HSTRING::from(key_path);
         let mut hkey = Default::default();
@@ -90,17 +95,7 @@ fn reg_set_string(key_path: &str, value_name: Option<&HSTRING>, data: &str) -> R
             return Err(windows::Win32::Foundation::E_FAIL);
         }
 
-        let data_w: Vec<u16> = data.encode_utf16().chain(std::iter::once(0)).collect();
-        let err = RegSetValueExW(
-            hkey,
-            value_name,
-            Some(0),
-            REG_SZ,
-            Some(std::slice::from_raw_parts(
-                data_w.as_ptr() as *const u8,
-                data_w.len() * 2,
-            )),
-        );
+        let err = RegSetValueExW(hkey, value_name, Some(0), reg_type, Some(data));
         if err.0 != 0 {
             log(&format!("RegSetValueExW failed: {key_path} err={}", err.0));
             return Err(windows::Win32::Foundation::E_FAIL);
@@ -109,35 +104,15 @@ fn reg_set_string(key_path: &str, value_name: Option<&HSTRING>, data: &str) -> R
     Ok(())
 }
 
-/// レジストリキーを作成して DWORD 値を設定するヘルパー
-fn reg_set_dword(key_path: &str, value_name: &HSTRING, data: u32) -> Result<(), HRESULT> {
-    unsafe {
-        let key_path_w = HSTRING::from(key_path);
-        let mut hkey = Default::default();
-        let err = RegCreateKeyExW(
-            HKEY_CURRENT_USER,
-            &key_path_w,
-            Some(0),
-            None,
-            Default::default(),
-            KEY_WRITE,
-            None,
-            &mut hkey,
-            None,
-        );
-        if err.0 != 0 {
-            log(&format!("RegCreateKeyExW failed: {key_path} err={}", err.0));
-            return Err(windows::Win32::Foundation::E_FAIL);
-        }
+fn reg_set_string(key_path: &str, value_name: PCWSTR, data: &str) -> Result<(), HRESULT> {
+    let data_w: Vec<u16> = data.encode_utf16().chain(std::iter::once(0)).collect();
+    let bytes =
+        unsafe { std::slice::from_raw_parts(data_w.as_ptr() as *const u8, data_w.len() * 2) };
+    reg_create_and_set(key_path, value_name, REG_SZ, bytes)
+}
 
-        let bytes = data.to_le_bytes();
-        let err = RegSetValueExW(hkey, value_name, Some(0), REG_DWORD, Some(&bytes));
-        if err.0 != 0 {
-            log(&format!("RegSetValueExW failed: {key_path} err={}", err.0));
-            return Err(windows::Win32::Foundation::E_FAIL);
-        }
-    }
-    Ok(())
+fn reg_set_dword(key_path: &str, value_name: PCWSTR, data: u32) -> Result<(), HRESULT> {
+    reg_create_and_set(key_path, value_name, REG_DWORD, &data.to_le_bytes())
 }
 
 /// COM/TSF 登録 (全て HKCU、管理者権限不要)
@@ -203,10 +178,11 @@ fn register_com_clsid(dll_path: &str, clsid: &str) -> Result<(), HRESULT> {
     let key = format!("Software\\Classes\\CLSID\\{clsid}\\InprocServer32");
 
     // DLL パス (デフォルト値)
-    reg_set_string(&key, None, dll_path)?;
+    reg_set_string(&key, PCWSTR::null(), dll_path)?;
 
     // ThreadingModel
-    reg_set_string(&key, Some(&HSTRING::from("ThreadingModel")), "Apartment")?;
+    let name: Vec<u16> = "ThreadingModel\0".encode_utf16().collect();
+    reg_set_string(&key, PCWSTR(name.as_ptr()), "Apartment")?;
 
     Ok(())
 }
@@ -220,16 +196,20 @@ fn register_tsf_profile(dll_path: &str, clsid: &str, profile: &str) -> Result<()
     );
 
     // Description
-    reg_set_string(&base, Some(&HSTRING::from("Description")), "Jamo")?;
+    let n: Vec<u16> = "Description\0".encode_utf16().collect();
+    reg_set_string(&base, PCWSTR(n.as_ptr()), "Jamo")?;
 
     // IconFile (DLL パス)
-    reg_set_string(&base, Some(&HSTRING::from("IconFile")), dll_path)?;
+    let n: Vec<u16> = "IconFile\0".encode_utf16().collect();
+    reg_set_string(&base, PCWSTR(n.as_ptr()), dll_path)?;
 
     // IconIndex
-    reg_set_dword(&base, &HSTRING::from("IconIndex"), 0)?;
+    let n: Vec<u16> = "IconIndex\0".encode_utf16().collect();
+    reg_set_dword(&base, PCWSTR(n.as_ptr()), 0)?;
 
     // Enable
-    reg_set_dword(&base, &HSTRING::from("Enable"), 1)?;
+    let n: Vec<u16> = "Enable\0".encode_utf16().collect();
+    reg_set_dword(&base, PCWSTR(n.as_ptr()), 1)?;
 
     Ok(())
 }
@@ -248,14 +228,16 @@ fn register_tsf_categories(clsid: &str) -> Result<(), HRESULT> {
     for cat in &categories {
         let cat_str = guid_to_string(cat);
         let key = format!("SOFTWARE\\Microsoft\\CTF\\TIP\\{clsid}\\Category\\Category\\{cat_str}");
-        reg_set_string(&key, Some(&HSTRING::from(clsid)), "")?;
+        let n: Vec<u16> = format!("{clsid}\0").encode_utf16().collect();
+        reg_set_string(&key, PCWSTR(n.as_ptr()), "")?;
     }
 
     // Item カテゴリ (CLSID → Category のマッピング)
     for cat in &categories {
         let cat_str = guid_to_string(cat);
         let key = format!("SOFTWARE\\Microsoft\\CTF\\TIP\\{clsid}\\Category\\Item\\{clsid}");
-        reg_set_string(&key, Some(&HSTRING::from(&cat_str)), "")?;
+        let n: Vec<u16> = format!("{cat_str}\0").encode_utf16().collect();
+        reg_set_string(&key, PCWSTR(n.as_ptr()), "")?;
     }
 
     Ok(())
