@@ -56,3 +56,24 @@ pub fn get_dll_instance() -> windows::Win32::Foundation::HMODULE {
 /// COM サーバーロックカウント (DllCanUnloadNow 用)
 #[cfg(windows)]
 pub static SERVER_LOCK_COUNT: AtomicU32 = AtomicU32::new(0);
+
+/// COM QueryInterface (vtable 直接呼び出し)
+///
+/// windows-rs 0.62 では IUnknown に query/QueryInterface メソッドがないため、
+/// vtable 経由で直接呼び出す。
+#[cfg(windows)]
+pub unsafe fn com_query_interface(
+    obj: *mut std::ffi::c_void,
+    iid: *const GUID,
+    ppv: *mut *mut std::ffi::c_void,
+) -> windows::core::HRESULT {
+    type QIFn = unsafe extern "system" fn(
+        *mut std::ffi::c_void,
+        *const windows::core::GUID,
+        *mut *mut std::ffi::c_void,
+    ) -> windows::core::HRESULT;
+    unsafe {
+        let vtbl = *(obj as *const *const QIFn);
+        (*vtbl)(obj, iid, ppv)
+    }
+}

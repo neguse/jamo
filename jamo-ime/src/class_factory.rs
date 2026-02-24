@@ -5,9 +5,9 @@ use std::ffi::c_void;
 use std::sync::atomic::Ordering;
 
 use windows::Win32::System::Com::*;
-use windows::core::{BOOL, GUID, IUnknown, Ref, Result, implement};
+use windows::core::{BOOL, GUID, IUnknown, Interface as _, Ref, Result, implement};
 
-use crate::globals::SERVER_LOCK_COUNT;
+use crate::globals::{SERVER_LOCK_COUNT, com_query_interface};
 use crate::text_service::JamoTextService;
 
 #[implement(IClassFactory)]
@@ -33,7 +33,7 @@ impl IClassFactory_Impl for JamoClassFactory_Impl {
 
             let service = JamoTextService::new();
             let unknown: IUnknown = service.into();
-            unknown.QueryInterface(&*riid, ppvobject).ok()
+            com_query_interface(unknown.as_raw(), &*riid, ppvobject).ok()
         }
     }
 

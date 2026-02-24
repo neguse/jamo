@@ -29,7 +29,9 @@ mod dll {
     use windows::core::{BOOL, GUID, HRESULT, Interface as _};
 
     use crate::class_factory::JamoClassFactory;
-    use crate::globals::{CLSID_JAMO_TEXT_SERVICE, SERVER_LOCK_COUNT, set_dll_instance};
+    use crate::globals::{
+        CLSID_JAMO_TEXT_SERVICE, SERVER_LOCK_COUNT, com_query_interface, set_dll_instance,
+    };
 
     /// DLL エントリポイント
     #[unsafe(no_mangle)]
@@ -61,11 +63,9 @@ mod dll {
             }
 
             let factory: IClassFactory = JamoClassFactory.into();
-            let unknown: windows::core::IUnknown = factory.cast().unwrap();
-            unknown
-                .QueryInterface(riid, ppv)
+            com_query_interface(factory.as_raw(), riid, ppv)
                 .ok()
-                .map_or_else(|e| e.into(), |()| S_OK)
+                .map_or_else(|e| e.code(), |()| S_OK)
         }
     }
 

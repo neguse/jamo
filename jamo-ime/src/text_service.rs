@@ -151,12 +151,10 @@ impl ITfTextInputProcessorEx_Impl for JamoTextService_Impl {
             let keystroke_mgr: ITfKeystrokeMgr = thread_mgr.cast()?;
 
             // self (_Impl) から ITfKeyEventSink を取得
-            // _Impl の先頭は IUnknown vtable なので ManuallyDrop で一時参照を作る
+            // _Impl の先頭は IUnknown vtable なので vtable 経由で QueryInterface
             let self_ptr = self as *const _ as *mut std::ffi::c_void;
-            let unknown = std::mem::ManuallyDrop::new(windows::core::IUnknown::from_raw(self_ptr));
             let mut sink_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
-            unknown
-                .QueryInterface(&ITfKeyEventSink::IID, &mut sink_ptr)
+            crate::globals::com_query_interface(self_ptr, &ITfKeyEventSink::IID, &mut sink_ptr)
                 .ok()?;
             let sink = ITfKeyEventSink::from_raw(sink_ptr);
 
