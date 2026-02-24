@@ -20,29 +20,66 @@ use crate::globals::{CLSID_JAMO_TEXT_SERVICE, GUID_JAMO_PROFILE, get_dll_instanc
 
 const LANGID_JAPANESE: u16 = 0x0411;
 
+/// デバッグログをファイルに出力 (%LOCALAPPDATA%\Jamo\register.log)
+fn log(msg: &str) {
+    use std::io::Write;
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        let dir = std::path::PathBuf::from(local_app_data).join("Jamo");
+        let _ = std::fs::create_dir_all(&dir);
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("register.log"))
+        {
+            let _ = writeln!(f, "{msg}");
+        }
+    }
+}
+
 fn get_dll_path() -> Result<String, HRESULT> {
     let hmodule = get_dll_instance();
     let mut path = [0u16; MAX_PATH as usize];
     let len = unsafe { GetModuleFileNameW(Some(hmodule), &mut path) } as usize;
     if len == 0 {
+        log("ERROR: GetModuleFileNameW returned 0");
         return Err(windows::Win32::Foundation::E_FAIL);
     }
-    Ok(String::from_utf16_lossy(&path[..len]))
+    let dll_path = String::from_utf16_lossy(&path[..len]);
+    log(&format!("DLL path: {dll_path}"));
+    Ok(dll_path)
 }
 
 /// COM/TSF 登録
 pub fn register() -> Result<(), HRESULT> {
+    log("=== register start ===");
+
     let dll_path = get_dll_path()?;
 
     // 1. COM CLSID 登録
-    register_com_clsid(&dll_path)?;
+    log("step 1: COM CLSID");
+    register_com_clsid(&dll_path).map_err(|e| {
+        log(&format!("FAILED: COM CLSID: {e:?}"));
+        e
+    })?;
+    log("step 1: OK");
 
     // 2. TSF Profile 登録
-    register_tsf_profile(&dll_path)?;
+    log("step 2: TSF Profile");
+    register_tsf_profile(&dll_path).map_err(|e| {
+        log(&format!("FAILED: TSF Profile: {e:?}"));
+        e
+    })?;
+    log("step 2: OK");
 
     // 3. TSF Category 登録
-    register_tsf_categories()?;
+    log("step 3: TSF Category");
+    register_tsf_categories().map_err(|e| {
+        log(&format!("FAILED: TSF Category: {e:?}"));
+        e
+    })?;
+    log("step 3: OK");
 
+    log("=== register done ===");
     Ok(())
 }
 
