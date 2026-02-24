@@ -33,7 +33,7 @@ impl IClassFactory_Impl for JamoClassFactory_Impl {
 
             let service = JamoTextService::new();
             let unknown: IUnknown = service.into();
-            unknown.query(&*riid, ppvobject).ok()
+            unknown.QueryInterface(&*riid, ppvobject).ok()
         }
     }
 

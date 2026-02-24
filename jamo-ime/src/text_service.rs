@@ -150,17 +150,17 @@ impl ITfTextInputProcessorEx_Impl for JamoTextService_Impl {
             let thread_mgr = ptim.clone().ok_or(windows::Win32::Foundation::E_FAIL)?;
             let keystroke_mgr: ITfKeystrokeMgr = thread_mgr.cast()?;
 
-            // IUnknownImpl::QueryInterface で ITfKeyEventSink を取得
+            // self (_Impl) から ITfKeyEventSink を取得
+            // _Impl の先頭は IUnknown vtable なので ManuallyDrop で一時参照を作る
+            let self_ptr = self as *const _ as *mut std::ffi::c_void;
+            let unknown = std::mem::ManuallyDrop::new(windows::core::IUnknown::from_raw(self_ptr));
             let mut sink_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
-            windows_core::imp::IUnknownImpl::QueryInterface(
-                self,
-                &ITfKeyEventSink::IID,
-                &mut sink_ptr,
-            )
-            .ok()?;
+            unknown
+                .QueryInterface(&ITfKeyEventSink::IID, &mut sink_ptr)
+                .ok()?;
             let sink = ITfKeyEventSink::from_raw(sink_ptr);
 
-            keystroke_mgr.AdviseKeyEventSink(tid, &sink, BOOL(1))?;
+            keystroke_mgr.AdviseKeyEventSink(tid, &sink, true)?;
 
             // 半角/全角キー登録
             keystroke_mgr.PreserveKey(

@@ -119,9 +119,11 @@ impl ITfEditSession_Impl for EndCompositionSession_Impl {
 // --- ヘルパー ---
 
 unsafe fn insert_text_at_selection(context: &ITfContext, ec: u32, text: &str) -> Result<ITfRange> {
-    let insert_at_selection: ITfInsertAtSelection = context.cast()?;
-    let text_u16: Vec<u16> = text.encode_utf16().collect();
-    let range = insert_at_selection.InsertTextAtSelection(ec, TF_IAS_QUERYONLY, &text_u16)?;
-    range.SetText(ec, 0, &text_u16)?;
-    Ok(range)
+    unsafe {
+        let insert_at_selection: ITfInsertAtSelection = context.cast()?;
+        let text_u16: Vec<u16> = text.encode_utf16().collect();
+        let range = insert_at_selection.InsertTextAtSelection(ec, TF_IAS_QUERYONLY, &text_u16)?;
+        range.SetText(ec, 0, &text_u16)?;
+        Ok(range)
+    }
 }

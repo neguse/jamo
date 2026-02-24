@@ -61,8 +61,9 @@ mod dll {
             }
 
             let factory: IClassFactory = JamoClassFactory.into();
-            factory
-                .query(riid, ppv)
+            let unknown: windows::core::IUnknown = factory.cast().unwrap();
+            unknown
+                .QueryInterface(riid, ppv)
                 .ok()
                 .map_or_else(|e| e.into(), |()| S_OK)
         }
