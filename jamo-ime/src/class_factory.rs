@@ -5,7 +5,7 @@ use std::ffi::c_void;
 use std::sync::atomic::Ordering;
 
 use windows::Win32::System::Com::*;
-use windows::core::{BOOL, GUID, IUnknown, Interface as _, Result, implement};
+use windows::core::{BOOL, GUID, IUnknown, Ref, Result, implement};
 
 use crate::globals::SERVER_LOCK_COUNT;
 use crate::text_service::JamoTextService;
@@ -16,7 +16,7 @@ pub struct JamoClassFactory;
 impl IClassFactory_Impl for JamoClassFactory_Impl {
     fn CreateInstance(
         &self,
-        punkouter: Option<&IUnknown>,
+        punkouter: Ref<'_, IUnknown>,
         riid: *const GUID,
         ppvobject: *mut *mut c_void,
     ) -> Result<()> {
@@ -27,13 +27,13 @@ impl IClassFactory_Impl for JamoClassFactory_Impl {
             *ppvobject = std::ptr::null_mut();
 
             // COM aggregation はサポートしない
-            if punkouter.is_some() {
+            if punkouter.clone().is_some() {
                 return Err(windows::Win32::Foundation::CLASS_E_NOAGGREGATION.into());
             }
 
             let service = JamoTextService::new();
             let unknown: IUnknown = service.into();
-            unknown.query(&*riid, ppvobject)
+            unknown.query(&*riid, ppvobject).ok()
         }
     }
 

@@ -142,60 +142,66 @@ impl ITfDisplayAttributeInfo_Impl for JamoDisplayAttributeInfo_Impl {
         }))
     }
 
-    fn GetAttributeInfo(&self) -> Result<TF_DISPLAYATTRIBUTE> {
-        Ok(match self.0 {
-            AttributeKind::Input => TF_DISPLAYATTRIBUTE {
-                crText: TF_DA_COLOR {
-                    r#type: TF_DA_COLORTYPE(0), // TF_CT_NONE
-                    ..Default::default()
+    fn GetAttributeInfo(&self, pda: *mut TF_DISPLAYATTRIBUTE) -> Result<()> {
+        unsafe {
+            if pda.is_null() {
+                return Err(windows::Win32::Foundation::E_POINTER.into());
+            }
+            *pda = match self.0 {
+                AttributeKind::Input => TF_DISPLAYATTRIBUTE {
+                    crText: TF_DA_COLOR {
+                        r#type: TF_DA_COLORTYPE(0), // TF_CT_NONE
+                        ..Default::default()
+                    },
+                    crBk: TF_DA_COLOR {
+                        r#type: TF_DA_COLORTYPE(0),
+                        ..Default::default()
+                    },
+                    lsStyle: TF_LS_DOT,
+                    fBoldLine: false.into(),
+                    crLine: TF_DA_COLOR {
+                        r#type: TF_DA_COLORTYPE(0),
+                        ..Default::default()
+                    },
+                    bAttr: TF_ATTR_INPUT,
                 },
-                crBk: TF_DA_COLOR {
-                    r#type: TF_DA_COLORTYPE(0),
-                    ..Default::default()
+                AttributeKind::Converted => TF_DISPLAYATTRIBUTE {
+                    crText: TF_DA_COLOR {
+                        r#type: TF_DA_COLORTYPE(0),
+                        ..Default::default()
+                    },
+                    crBk: TF_DA_COLOR {
+                        r#type: TF_DA_COLORTYPE(0),
+                        ..Default::default()
+                    },
+                    lsStyle: TF_LS_SOLID,
+                    fBoldLine: false.into(),
+                    crLine: TF_DA_COLOR {
+                        r#type: TF_DA_COLORTYPE(0),
+                        ..Default::default()
+                    },
+                    bAttr: TF_ATTR_CONVERTED,
                 },
-                lsStyle: TF_LS_DOT,
-                fBoldLine: false.into(),
-                crLine: TF_DA_COLOR {
-                    r#type: TF_DA_COLORTYPE(0),
-                    ..Default::default()
+                AttributeKind::Focused => TF_DISPLAYATTRIBUTE {
+                    crText: TF_DA_COLOR {
+                        r#type: TF_DA_COLORTYPE(0),
+                        ..Default::default()
+                    },
+                    crBk: TF_DA_COLOR {
+                        r#type: TF_DA_COLORTYPE(0),
+                        ..Default::default()
+                    },
+                    lsStyle: TF_LS_SOLID,
+                    fBoldLine: true.into(),
+                    crLine: TF_DA_COLOR {
+                        r#type: TF_DA_COLORTYPE(0),
+                        ..Default::default()
+                    },
+                    bAttr: TF_ATTR_TARGET_CONVERTED,
                 },
-                bAttr: TF_ATTR_INPUT,
-            },
-            AttributeKind::Converted => TF_DISPLAYATTRIBUTE {
-                crText: TF_DA_COLOR {
-                    r#type: TF_DA_COLORTYPE(0),
-                    ..Default::default()
-                },
-                crBk: TF_DA_COLOR {
-                    r#type: TF_DA_COLORTYPE(0),
-                    ..Default::default()
-                },
-                lsStyle: TF_LS_SOLID,
-                fBoldLine: false.into(),
-                crLine: TF_DA_COLOR {
-                    r#type: TF_DA_COLORTYPE(0),
-                    ..Default::default()
-                },
-                bAttr: TF_ATTR_CONVERTED,
-            },
-            AttributeKind::Focused => TF_DISPLAYATTRIBUTE {
-                crText: TF_DA_COLOR {
-                    r#type: TF_DA_COLORTYPE(0),
-                    ..Default::default()
-                },
-                crBk: TF_DA_COLOR {
-                    r#type: TF_DA_COLORTYPE(0),
-                    ..Default::default()
-                },
-                lsStyle: TF_LS_SOLID,
-                fBoldLine: true.into(),
-                crLine: TF_DA_COLOR {
-                    r#type: TF_DA_COLORTYPE(0),
-                    ..Default::default()
-                },
-                bAttr: TF_ATTR_TARGET_CONVERTED,
-            },
-        })
+            };
+        }
+        Ok(())
     }
 
     fn SetAttributeInfo(&self, _pda: *const TF_DISPLAYATTRIBUTE) -> Result<()> {

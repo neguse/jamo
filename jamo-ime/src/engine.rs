@@ -61,11 +61,11 @@ impl ImeEngine {
             let result = RegOpenKeyExW(
                 HKEY_CURRENT_USER,
                 w!("Software\\Jamo"),
-                0,
+                Some(0),
                 KEY_READ,
                 &mut hkey,
             );
-            if result.is_err() {
+            if result.0 != 0 {
                 return None;
             }
 
@@ -80,9 +80,9 @@ impl ImeEngine {
                 Some(buf.as_mut_ptr() as *mut u8),
                 Some(&mut buf_len),
             );
-            RegCloseKey(hkey).ok();
+            let _ = RegCloseKey(hkey);
 
-            if result.is_err() {
+            if result.0 != 0 {
                 return None;
             }
 

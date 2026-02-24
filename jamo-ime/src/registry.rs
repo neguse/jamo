@@ -8,12 +8,13 @@ use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 use windows::Win32::System::Registry::{
     HKEY_CLASSES_ROOT, KEY_WRITE, REG_SZ, RegCreateKeyExW, RegDeleteTreeW, RegSetValueExW,
 };
+use windows::Win32::UI::Input::KeyboardAndMouse::HKL;
 use windows::Win32::UI::TextServices::{
     CLSID_TF_CategoryMgr, CLSID_TF_InputProcessorProfiles, GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER,
     GUID_TFCAT_TIP_KEYBOARD, GUID_TFCAT_TIPCAP_UIELEMENTENABLED, ITfCategoryMgr,
     ITfInputProcessorProfileMgr,
 };
-use windows::core::{HRESULT, HSTRING, Interface as _, w};
+use windows::core::{HRESULT, HSTRING, w};
 
 use crate::globals::{CLSID_JAMO_TEXT_SERVICE, GUID_JAMO_PROFILE, get_dll_instance};
 
@@ -61,39 +62,51 @@ fn register_com_clsid(dll_path: &str) -> Result<(), HRESULT> {
 
     unsafe {
         let mut hkey = Default::default();
-        RegCreateKeyExW(
+        let err = RegCreateKeyExW(
             HKEY_CLASSES_ROOT,
             &key_path_w,
-            0,
+            Some(0),
             None,
             Default::default(),
             KEY_WRITE,
             None,
             &mut hkey,
             None,
-        )
-        .map_err(|e| e.code())?;
+        );
+        if err.0 != 0 {
+            return Err(windows::Win32::Foundation::E_FAIL);
+        }
 
         // DLL パス (デフォルト値)
         let dll_path_w: Vec<u16> = dll_path.encode_utf16().chain(std::iter::once(0)).collect();
-        RegSetValueExW(
+        let err = RegSetValueExW(
             hkey,
             None,
-            0,
+            Some(0),
             REG_SZ,
             Some(std::slice::from_raw_parts(
                 dll_path_w.as_ptr() as *const u8,
                 dll_path_w.len() * 2,
             )),
-        )
-        .map_err(|e| e.code())?;
+        );
+        if err.0 != 0 {
+            return Err(windows::Win32::Foundation::E_FAIL);
+        }
 
         // ThreadingModel
         let threading = w!("Apartment");
         let threading_bytes: &[u8] =
             std::slice::from_raw_parts(threading.as_ptr() as *const u8, (threading.len() + 1) * 2);
-        RegSetValueExW(hkey, w!("ThreadingModel"), 0, REG_SZ, Some(threading_bytes))
-            .map_err(|e| e.code())?;
+        let err = RegSetValueExW(
+            hkey,
+            w!("ThreadingModel"),
+            Some(0),
+            REG_SZ,
+            Some(threading_bytes),
+        );
+        if err.0 != 0 {
+            return Err(windows::Win32::Foundation::E_FAIL);
+        }
     }
     Ok(())
 }
@@ -104,7 +117,10 @@ fn unregister_com_clsid() -> Result<(), HRESULT> {
     let key_path_w = HSTRING::from(&key_path);
 
     unsafe {
-        RegDeleteTreeW(HKEY_CLASSES_ROOT, &key_path_w).map_err(|e| e.code())?;
+        let err = RegDeleteTreeW(HKEY_CLASSES_ROOT, &key_path_w);
+        if err.0 != 0 {
+            return Err(windows::Win32::Foundation::E_FAIL);
+        }
     }
     Ok(())
 }
@@ -115,20 +131,20 @@ fn register_tsf_profile(dll_path: &str) -> Result<(), HRESULT> {
             CoCreateInstance(&CLSID_TF_InputProcessorProfiles, None, CLSCTX_INPROC_SERVER)
                 .map_err(|e| e.code())?;
 
-        let dll_path_w = HSTRING::from(dll_path);
+        let desc: Vec<u16> = "Jamo".encode_utf16().collect();
+        let dll_path_u16: Vec<u16> = dll_path.encode_utf16().collect();
 
         profile_mgr
             .RegisterProfile(
                 &CLSID_JAMO_TEXT_SERVICE,
                 LANGID_JAPANESE,
                 &GUID_JAMO_PROFILE,
-                &HSTRING::from("Jamo"),
-                &dll_path_w,
+                &desc,
+                &dll_path_u16,
                 0, // icon index
-                std::ptr::null(),
+                HKL::default(),
                 0,
-                0,
-                1, // enabled
+                true, // enabled
                 0,
             )
             .map_err(|e| e.code())?;

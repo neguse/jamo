@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 
 use windows::Win32::UI::TextServices::*;
-use windows::core::{HSTRING, Interface as _, Result, implement};
+use windows::core::{Interface as _, Result, implement};
 
 /// Composition テキスト更新の EditSession を要求
 pub fn request_update_composition(
@@ -20,9 +20,8 @@ pub fn request_update_composition(
         client_id,
     };
     let session: ITfEditSession = session.into();
-    let mut hr = Default::default();
     unsafe {
-        context.RequestEditSession(client_id, &session, TF_ES_READWRITE | TF_ES_SYNC, &mut hr)?;
+        context.RequestEditSession(client_id, &session, TF_ES_READWRITE | TF_ES_SYNC)?;
     }
     Ok(())
 }
@@ -41,9 +40,8 @@ pub fn request_end_composition(
         client_id,
     };
     let session: ITfEditSession = session.into();
-    let mut hr = Default::default();
     unsafe {
-        context.RequestEditSession(client_id, &session, TF_ES_READWRITE | TF_ES_SYNC, &mut hr)?;
+        context.RequestEditSession(client_id, &session, TF_ES_READWRITE | TF_ES_SYNC)?;
     }
     Ok(())
 }
@@ -83,8 +81,8 @@ impl ITfEditSession_Impl for UpdateCompositionSession_Impl {
             } else if let Some(composition) = comp.as_ref() {
                 // 既存の Composition テキストを更新
                 let range = composition.GetRange()?;
-                let text_w = HSTRING::from(&self.text);
-                range.SetText(ec, &text_w)?;
+                let text_u16: Vec<u16> = self.text.encode_utf16().collect();
+                range.SetText(ec, 0, &text_u16)?;
             }
         }
         Ok(())
@@ -108,8 +106,8 @@ impl ITfEditSession_Impl for EndCompositionSession_Impl {
             if let Some(composition) = comp.take() {
                 if !self.text.is_empty() {
                     let range = composition.GetRange()?;
-                    let text_w = HSTRING::from(&self.text);
-                    range.SetText(ec, &text_w)?;
+                    let text_u16: Vec<u16> = self.text.encode_utf16().collect();
+                    range.SetText(ec, 0, &text_u16)?;
                 }
                 composition.EndComposition(ec)?;
             }
@@ -122,8 +120,8 @@ impl ITfEditSession_Impl for EndCompositionSession_Impl {
 
 unsafe fn insert_text_at_selection(context: &ITfContext, ec: u32, text: &str) -> Result<ITfRange> {
     let insert_at_selection: ITfInsertAtSelection = context.cast()?;
-    let text_w = HSTRING::from(text);
-    let range = insert_at_selection.InsertTextAtSelection(ec, TF_IAS_QUERYONLY, &text_w)?;
-    range.SetText(ec, &HSTRING::from(text))?;
+    let text_u16: Vec<u16> = text.encode_utf16().collect();
+    let range = insert_at_selection.InsertTextAtSelection(ec, TF_IAS_QUERYONLY, &text_u16)?;
+    range.SetText(ec, 0, &text_u16)?;
     Ok(range)
 }

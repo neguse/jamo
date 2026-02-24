@@ -138,7 +138,8 @@ impl JamoTextService {
 
 impl ITfTextInputProcessorEx_Impl for JamoTextService_Impl {
     fn ActivateEx(&self, ptim: Ref<'_, ITfThreadMgr>, tid: u32, _dwflags: u32) -> Result<()> {
-        *self.thread_mgr.borrow_mut() = Some(ptim.clone());
+        // Ref::clone() returns Option<ITfThreadMgr>
+        *self.thread_mgr.borrow_mut() = ptim.clone();
         *self.client_id.borrow_mut() = tid;
 
         // 辞書ロード (バックグラウンドでもよいが、まずは同期)
@@ -146,8 +147,19 @@ impl ITfTextInputProcessorEx_Impl for JamoTextService_Impl {
 
         // キーイベント登録
         unsafe {
-            let keystroke_mgr: ITfKeystrokeMgr = ptim.cast()?;
-            let sink: ITfKeyEventSink = self.cast()?;
+            let thread_mgr = ptim.clone().ok_or(windows::Win32::Foundation::E_FAIL)?;
+            let keystroke_mgr: ITfKeystrokeMgr = thread_mgr.cast()?;
+
+            // IUnknownImpl::QueryInterface で ITfKeyEventSink を取得
+            let mut sink_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+            windows_core::imp::IUnknownImpl::QueryInterface(
+                self,
+                &ITfKeyEventSink::IID,
+                &mut sink_ptr,
+            )
+            .ok()?;
+            let sink = ITfKeyEventSink::from_raw(sink_ptr);
+
             keystroke_mgr.AdviseKeyEventSink(tid, &sink, BOOL(1))?;
 
             // 半角/全角キー登録
@@ -155,7 +167,7 @@ impl ITfTextInputProcessorEx_Impl for JamoTextService_Impl {
                 tid,
                 &GUID_PRESERVED_KEY_ONOFF,
                 &TF_PRESERVED_KEY_ONOFF,
-                None,
+                &[],
             )?;
         }
 
@@ -217,7 +229,8 @@ impl ITfKeyEventSink_Impl for JamoTextService_Impl {
 
     fn OnKeyDown(&self, pic: Ref<'_, ITfContext>, wparam: WPARAM, _lparam: LPARAM) -> Result<BOOL> {
         let shift = unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x10) < 0 };
-        let eaten = self.process_key(&pic, wparam, shift)?;
+        let context = pic.clone().ok_or(windows::Win32::Foundation::E_FAIL)?;
+        let eaten = self.process_key(&context, wparam, shift)?;
         Ok(BOOL(eaten as i32))
     }
 
