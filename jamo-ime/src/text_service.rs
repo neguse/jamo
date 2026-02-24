@@ -36,11 +36,12 @@ pub struct JamoTextService {
 
 impl JamoTextService {
     pub fn new() -> Self {
+        // IME 選択 = 日本語入力したい、なので最初から Composing で起動
         Self {
             thread_mgr: RefCell::new(None),
             client_id: RefCell::new(0),
             composition: RefCell::new(None),
-            state: RefCell::new(InputState::new()),
+            state: RefCell::new(InputState::composing()),
             engine: OnceLock::new(),
         }
     }
@@ -193,7 +194,7 @@ impl ITfTextInputProcessor_Impl for JamoTextService_Impl {
         }
         *self.thread_mgr.borrow_mut() = None;
         *self.client_id.borrow_mut() = 0;
-        *self.state.borrow_mut() = InputState::Direct;
+        *self.state.borrow_mut() = InputState::composing();
         Ok(())
     }
 }
@@ -257,10 +258,7 @@ impl ITfCompositionSink_Impl for JamoTextService_Impl {
         _pcomposition: Ref<'_, ITfComposition>,
     ) -> Result<()> {
         *self.composition.borrow_mut() = None;
-        *self.state.borrow_mut() = InputState::Composing {
-            hiragana: String::new(),
-            romaji: jamo_core::romaji::RomajiConverter::new(),
-        };
+        *self.state.borrow_mut() = InputState::composing();
         Ok(())
     }
 }

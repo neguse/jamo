@@ -57,9 +57,17 @@ pub mod vk {
 }
 
 impl InputState {
-    /// 初期状態
+    /// 初期状態 (Direct)
     pub fn new() -> Self {
         InputState::Direct
+    }
+
+    /// Composing 状態で初期化
+    pub fn composing() -> Self {
+        InputState::Composing {
+            hiragana: String::new(),
+            romaji: RomajiConverter::new(),
+        }
     }
 
     /// IME がこのキーを処理すべきか (OnTestKeyDown 用, 副作用なし)
