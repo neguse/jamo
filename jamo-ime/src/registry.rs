@@ -1,21 +1,19 @@
-/// COM/TSF 登録・解除 (Per-user, 管理者権限不要)
+/// COM/TSF 登録・解除
 ///
-/// regsvr32 で DLL を登録したとき、Windows が IME として認識するための登録処理。
-/// 全て HKCU に書き込むため管理者権限不要。
-///
-/// 登録先:
-/// - COM CLSID: HKCU\Software\Classes\CLSID\{CLSID}\InprocServer32
-/// - TSF Profile: HKCU\SOFTWARE\Microsoft\CTF\TIP\{CLSID}\LanguageProfile\0x00000411\{Profile}
-/// - TSF Category: HKCU\SOFTWARE\Microsoft\CTF\TIP\{CLSID}\Category\Category\{CatGUID}
+/// regsvr32 (管理者権限) で DLL を登録したとき、Windows が IME として認識するための
+/// 3段階の登録処理 (COM CLSID, TSF Profile, TSF Category)。
 use windows::Win32::Foundation::MAX_PATH;
+use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 use windows::Win32::System::Registry::{
-    HKEY_CURRENT_USER, KEY_WRITE, REG_DWORD, REG_SZ, REG_VALUE_TYPE, RegCreateKeyExW,
-    RegDeleteTreeW, RegSetValueExW,
+    HKEY_CLASSES_ROOT, KEY_WRITE, REG_SZ, REG_VALUE_TYPE, RegCreateKeyExW, RegDeleteTreeW,
+    RegSetValueExW,
 };
+use windows::Win32::UI::Input::KeyboardAndMouse::HKL;
 use windows::Win32::UI::TextServices::{
-    GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER, GUID_TFCAT_TIP_KEYBOARD,
-    GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
+    CLSID_TF_CategoryMgr, CLSID_TF_InputProcessorProfiles, GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER,
+    GUID_TFCAT_TIP_KEYBOARD, GUID_TFCAT_TIPCAP_UIELEMENTENABLED, ITfCategoryMgr,
+    ITfInputProcessorProfileMgr,
 };
 use windows::core::{HRESULT, HSTRING, PCWSTR};
 
@@ -69,7 +67,7 @@ fn get_dll_path() -> Result<String, HRESULT> {
     Ok(dll_path)
 }
 
-/// レジストリキーを作成して値を設定するヘルパー
+/// レジストリキーを作成して値を設定
 fn reg_create_and_set(
     key_path: &str,
     value_name: PCWSTR,
@@ -80,7 +78,7 @@ fn reg_create_and_set(
         let key_path_w = HSTRING::from(key_path);
         let mut hkey = Default::default();
         let err = RegCreateKeyExW(
-            HKEY_CURRENT_USER,
+            HKEY_CLASSES_ROOT,
             &key_path_w,
             Some(0),
             None,
@@ -111,31 +109,35 @@ fn reg_set_string(key_path: &str, value_name: PCWSTR, data: &str) -> Result<(), 
     reg_create_and_set(key_path, value_name, REG_SZ, bytes)
 }
 
-fn reg_set_dword(key_path: &str, value_name: PCWSTR, data: u32) -> Result<(), HRESULT> {
-    reg_create_and_set(key_path, value_name, REG_DWORD, &data.to_le_bytes())
-}
-
-/// COM/TSF 登録 (全て HKCU、管理者権限不要)
+/// COM/TSF 登録 (管理者権限必要)
 pub fn register() -> Result<(), HRESULT> {
     log("=== register start ===");
 
     let dll_path = get_dll_path()?;
     let clsid = guid_to_string(&CLSID_JAMO_TEXT_SERVICE);
-    let profile = guid_to_string(&GUID_JAMO_PROFILE);
 
     // 1. COM CLSID 登録
     log("step 1: COM CLSID");
-    register_com_clsid(&dll_path, &clsid)?;
+    register_com_clsid(&dll_path, &clsid).map_err(|e| {
+        log(&format!("FAILED: COM CLSID: {e:?}"));
+        e
+    })?;
     log("step 1: OK");
 
-    // 2. TSF Profile 登録 (直接レジストリ書き込み)
+    // 2. TSF Profile 登録
     log("step 2: TSF Profile");
-    register_tsf_profile(&dll_path, &clsid, &profile)?;
+    register_tsf_profile(&dll_path).map_err(|e| {
+        log(&format!("FAILED: TSF Profile: {e:?}"));
+        e
+    })?;
     log("step 2: OK");
 
-    // 3. TSF Category 登録 (直接レジストリ書き込み)
+    // 3. TSF Category 登録
     log("step 3: TSF Category");
-    register_tsf_categories(&clsid)?;
+    register_tsf_categories().map_err(|e| {
+        log(&format!("FAILED: TSF Category: {e:?}"));
+        e
+    })?;
     log("step 3: OK");
 
     log("=== register done ===");
@@ -145,37 +147,17 @@ pub fn register() -> Result<(), HRESULT> {
 /// COM/TSF 登録解除
 pub fn unregister() -> Result<(), HRESULT> {
     log("=== unregister start ===");
-
-    let clsid = guid_to_string(&CLSID_JAMO_TEXT_SERVICE);
-
-    // COM CLSID 削除
-    let key = format!("Software\\Classes\\CLSID\\{clsid}");
-    let _ = reg_delete_tree(&key);
-
-    // TSF TIP 削除
-    let key = format!("SOFTWARE\\Microsoft\\CTF\\TIP\\{clsid}");
-    let _ = reg_delete_tree(&key);
-
+    unregister_tsf_categories().ok();
+    unregister_tsf_profile().ok();
+    unregister_com_clsid().ok();
     log("=== unregister done ===");
-    Ok(())
-}
-
-fn reg_delete_tree(key_path: &str) -> Result<(), HRESULT> {
-    let key_path_w = HSTRING::from(key_path);
-    unsafe {
-        let err = RegDeleteTreeW(HKEY_CURRENT_USER, &key_path_w);
-        if err.0 != 0 {
-            log(&format!("RegDeleteTreeW: {key_path} err={}", err.0));
-            return Err(windows::Win32::Foundation::E_FAIL);
-        }
-    }
     Ok(())
 }
 
 // --- Step 1: COM CLSID ---
 
 fn register_com_clsid(dll_path: &str, clsid: &str) -> Result<(), HRESULT> {
-    let key = format!("Software\\Classes\\CLSID\\{clsid}\\InprocServer32");
+    let key = format!("CLSID\\{clsid}\\InprocServer32");
 
     // DLL パス (デフォルト値)
     reg_set_string(&key, PCWSTR::null(), dll_path)?;
@@ -187,58 +169,114 @@ fn register_com_clsid(dll_path: &str, clsid: &str) -> Result<(), HRESULT> {
     Ok(())
 }
 
-// --- Step 2: TSF Profile (直接レジストリ) ---
-// HKCU\SOFTWARE\Microsoft\CTF\TIP\{CLSID}\LanguageProfile\0x00000411\{Profile}
-
-fn register_tsf_profile(dll_path: &str, clsid: &str, profile: &str) -> Result<(), HRESULT> {
-    let base = format!(
-        "SOFTWARE\\Microsoft\\CTF\\TIP\\{clsid}\\LanguageProfile\\0x{LANGID_JAPANESE:08X}\\{profile}"
-    );
-
-    // Description
-    let n: Vec<u16> = "Description\0".encode_utf16().collect();
-    reg_set_string(&base, PCWSTR(n.as_ptr()), "Jamo")?;
-
-    // IconFile (DLL パス)
-    let n: Vec<u16> = "IconFile\0".encode_utf16().collect();
-    reg_set_string(&base, PCWSTR(n.as_ptr()), dll_path)?;
-
-    // IconIndex
-    let n: Vec<u16> = "IconIndex\0".encode_utf16().collect();
-    reg_set_dword(&base, PCWSTR(n.as_ptr()), 0)?;
-
-    // Enable
-    let n: Vec<u16> = "Enable\0".encode_utf16().collect();
-    reg_set_dword(&base, PCWSTR(n.as_ptr()), 1)?;
-
+fn unregister_com_clsid() -> Result<(), HRESULT> {
+    let clsid = guid_to_string(&CLSID_JAMO_TEXT_SERVICE);
+    let key = format!("CLSID\\{clsid}");
+    let key_w = HSTRING::from(&key);
+    unsafe {
+        let err = RegDeleteTreeW(HKEY_CLASSES_ROOT, &key_w);
+        if err.0 != 0 {
+            log(&format!("RegDeleteTreeW failed: {key} err={}", err.0));
+            return Err(windows::Win32::Foundation::E_FAIL);
+        }
+    }
     Ok(())
 }
 
-// --- Step 3: TSF Category (直接レジストリ) ---
-// HKCU\SOFTWARE\Microsoft\CTF\TIP\{CLSID}\Category\Category\{CatGUID}
-//   値名: {CLSID} = ""
+// --- Step 2: TSF Profile ---
 
-fn register_tsf_categories(clsid: &str) -> Result<(), HRESULT> {
-    let categories = [
-        GUID_TFCAT_TIP_KEYBOARD,
-        GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
-        GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER,
-    ];
+fn register_tsf_profile(dll_path: &str) -> Result<(), HRESULT> {
+    unsafe {
+        let profile_mgr: ITfInputProcessorProfileMgr =
+            CoCreateInstance(&CLSID_TF_InputProcessorProfiles, None, CLSCTX_INPROC_SERVER)
+                .map_err(|e| {
+                    log(&format!("CoCreateInstance(ProfileMgr) failed: {e}"));
+                    e.code()
+                })?;
 
-    for cat in &categories {
-        let cat_str = guid_to_string(cat);
-        let key = format!("SOFTWARE\\Microsoft\\CTF\\TIP\\{clsid}\\Category\\Category\\{cat_str}");
-        let n: Vec<u16> = format!("{clsid}\0").encode_utf16().collect();
-        reg_set_string(&key, PCWSTR(n.as_ptr()), "")?;
+        let desc: Vec<u16> = "Jamo".encode_utf16().collect();
+        let dll_path_u16: Vec<u16> = dll_path.encode_utf16().collect();
+
+        profile_mgr
+            .RegisterProfile(
+                &CLSID_JAMO_TEXT_SERVICE,
+                LANGID_JAPANESE,
+                &GUID_JAMO_PROFILE,
+                &desc,
+                &dll_path_u16,
+                0, // icon index
+                HKL::default(),
+                0,
+                true,
+                0,
+            )
+            .map_err(|e| {
+                log(&format!("RegisterProfile failed: {e}"));
+                e.code()
+            })?;
     }
+    Ok(())
+}
 
-    // Item カテゴリ (CLSID → Category のマッピング)
-    for cat in &categories {
-        let cat_str = guid_to_string(cat);
-        let key = format!("SOFTWARE\\Microsoft\\CTF\\TIP\\{clsid}\\Category\\Item\\{clsid}");
-        let n: Vec<u16> = format!("{cat_str}\0").encode_utf16().collect();
-        reg_set_string(&key, PCWSTR(n.as_ptr()), "")?;
+fn unregister_tsf_profile() -> Result<(), HRESULT> {
+    unsafe {
+        let profile_mgr: ITfInputProcessorProfileMgr =
+            CoCreateInstance(&CLSID_TF_InputProcessorProfiles, None, CLSCTX_INPROC_SERVER)
+                .map_err(|e| e.code())?;
+
+        profile_mgr
+            .UnregisterProfile(
+                &CLSID_JAMO_TEXT_SERVICE,
+                LANGID_JAPANESE,
+                &GUID_JAMO_PROFILE,
+                0,
+            )
+            .map_err(|e| e.code())?;
     }
+    Ok(())
+}
 
+// --- Step 3: TSF Category ---
+
+fn register_tsf_categories() -> Result<(), HRESULT> {
+    unsafe {
+        let cat_mgr: ITfCategoryMgr =
+            CoCreateInstance(&CLSID_TF_CategoryMgr, None, CLSCTX_INPROC_SERVER).map_err(|e| {
+                log(&format!("CoCreateInstance(CategoryMgr) failed: {e}"));
+                e.code()
+            })?;
+
+        for cat in &[
+            GUID_TFCAT_TIP_KEYBOARD,
+            GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
+            GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER,
+        ] {
+            cat_mgr
+                .RegisterCategory(&CLSID_JAMO_TEXT_SERVICE, cat, &CLSID_JAMO_TEXT_SERVICE)
+                .map_err(|e| {
+                    log(&format!("RegisterCategory failed: {e}"));
+                    e.code()
+                })?;
+        }
+    }
+    Ok(())
+}
+
+fn unregister_tsf_categories() -> Result<(), HRESULT> {
+    unsafe {
+        let cat_mgr: ITfCategoryMgr =
+            CoCreateInstance(&CLSID_TF_CategoryMgr, None, CLSCTX_INPROC_SERVER)
+                .map_err(|e| e.code())?;
+
+        for cat in &[
+            GUID_TFCAT_TIP_KEYBOARD,
+            GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
+            GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER,
+        ] {
+            cat_mgr
+                .UnregisterCategory(&CLSID_JAMO_TEXT_SERVICE, cat, &CLSID_JAMO_TEXT_SERVICE)
+                .ok();
+        }
+    }
     Ok(())
 }
