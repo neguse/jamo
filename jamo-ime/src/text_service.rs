@@ -69,6 +69,17 @@ impl JamoTextService {
         }
     }
 
+    /// self から ITfCompositionSink を取得 (vtable 経由)
+    fn get_composition_sink(&self) -> Result<ITfCompositionSink> {
+        unsafe {
+            let self_ptr = self as *const _ as *mut std::ffi::c_void;
+            let mut sink_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+            crate::globals::com_query_interface(self_ptr, &ITfCompositionSink::IID, &mut sink_ptr)
+                .ok()?;
+            Ok(ITfCompositionSink::from_raw(sink_ptr))
+        }
+    }
+
     fn process_key(&self, context: &ITfContext, wparam: WPARAM, shift: bool) -> Result<bool> {
         let vk = wparam.0 as u16;
         let ch = Self::vk_to_char(wparam);
@@ -78,11 +89,13 @@ impl JamoTextService {
 
         match action {
             Action::UpdateComposition(text) => {
+                let sink = self.get_composition_sink()?;
                 edit_session::request_update_composition(
                     context,
                     client_id,
                     &self.composition,
                     &text,
+                    &sink,
                 )?;
                 Ok(true)
             }
@@ -103,31 +116,37 @@ impl JamoTextService {
                         .borrow_mut()
                         .set_conversion_result(hiragana, result);
                     let text = self.state.borrow().display_text();
+                    let sink = self.get_composition_sink()?;
                     edit_session::request_update_composition(
                         context,
                         client_id,
                         &self.composition,
                         &text,
+                        &sink,
                     )?;
                 }
                 Ok(true)
             }
             Action::UpdateConversion => {
                 let text = self.state.borrow().display_text();
+                let sink = self.get_composition_sink()?;
                 edit_session::request_update_composition(
                     context,
                     client_id,
                     &self.composition,
                     &text,
+                    &sink,
                 )?;
                 Ok(true)
             }
             Action::CancelConversion(hiragana) => {
+                let sink = self.get_composition_sink()?;
                 edit_session::request_update_composition(
                     context,
                     client_id,
                     &self.composition,
                     &hiragana,
+                    &sink,
                 )?;
                 self.state.borrow_mut().revert_to_composing(hiragana);
                 Ok(true)

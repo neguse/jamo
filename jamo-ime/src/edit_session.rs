@@ -12,12 +12,14 @@ pub fn request_update_composition(
     client_id: u32,
     composition: &RefCell<Option<ITfComposition>>,
     text: &str,
+    sink: &ITfCompositionSink,
 ) -> Result<()> {
     let session = UpdateCompositionSession {
         context: context.clone(),
         composition: composition.clone(),
         text: text.to_string(),
         client_id,
+        sink: sink.clone(),
     };
     let session: ITfEditSession = session.into();
     unsafe {
@@ -54,6 +56,7 @@ struct UpdateCompositionSession {
     composition: RefCell<Option<ITfComposition>>,
     text: String,
     client_id: u32,
+    sink: ITfCompositionSink,
 }
 
 impl ITfEditSession_Impl for UpdateCompositionSession_Impl {
@@ -64,19 +67,8 @@ impl ITfEditSession_Impl for UpdateCompositionSession_Impl {
             if comp.is_none() {
                 // Composition がまだない → 開始
                 let context_composition: ITfContextComposition = self.context.cast()?;
-                let sink: ITfCompositionSink = self
-                    .context
-                    .cast()
-                    .ok()
-                    .and_then(|_: ITfContext| None)
-                    .unwrap_or_else(|| {
-                        // CompositionSink は text_service が持つが、ここでは簡易版
-                        // 実際には JamoTextService の ITfCompositionSink を使う
-                        todo!("Need composition sink from text_service")
-                    });
-
                 let range = insert_text_at_selection(&self.context, ec, &self.text)?;
-                let new_comp = context_composition.StartComposition(ec, &range, &sink)?;
+                let new_comp = context_composition.StartComposition(ec, &range, &self.sink)?;
                 *comp = Some(new_comp);
             } else if let Some(composition) = comp.as_ref() {
                 // 既存の Composition テキストを更新
