@@ -23,10 +23,10 @@ mod dll {
     use std::ffi::c_void;
     use std::sync::atomic::Ordering;
 
-    use windows::Win32::Foundation::{BOOL, HINSTANCE, S_FALSE, S_OK};
+    use windows::Win32::Foundation::{HINSTANCE, S_FALSE, S_OK};
     use windows::Win32::System::Com::IClassFactory;
-    use windows::Win32::System::LibraryLoader::DLL_PROCESS_ATTACH;
-    use windows::core::{GUID, HRESULT, Interface as _};
+    use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
+    use windows::core::{BOOL, GUID, HRESULT, Interface as _};
 
     use crate::class_factory::JamoClassFactory;
     use crate::globals::{CLSID_JAMO_TEXT_SERVICE, DLL_INSTANCE, SERVER_LOCK_COUNT};

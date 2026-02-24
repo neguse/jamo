@@ -4,9 +4,9 @@
 use std::cell::RefCell;
 use std::sync::OnceLock;
 
-use windows::Win32::Foundation::{BOOL, LPARAM, WPARAM};
+use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::UI::TextServices::*;
-use windows::core::{GUID, IUnknown, Interface as _, Result, implement};
+use windows::core::{BOOL, GUID, IUnknown, Interface as _, Result, implement};
 
 use crate::composition::{Action, InputState, vk};
 use crate::display_attribute::JamoDisplayAttributeProvider;

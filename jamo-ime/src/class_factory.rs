@@ -4,9 +4,8 @@
 use std::ffi::c_void;
 use std::sync::atomic::Ordering;
 
-use windows::Win32::Foundation::BOOL;
 use windows::Win32::System::Com::IClassFactory;
-use windows::core::{GUID, IUnknown, Interface as _, Result, implement};
+use windows::core::{BOOL, GUID, IUnknown, Interface as _, Result, implement};
 
 use crate::globals::SERVER_LOCK_COUNT;
 use crate::text_service::JamoTextService;

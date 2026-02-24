@@ -2,9 +2,8 @@
 ///
 /// MVP: ITfCandidateListUIElementBehavior で OS 標準の候補ウィンドウを使用。
 /// 将来的にはカスタム候補ウィンドウに置き換え可能。
-use windows::Win32::Foundation::BOOL;
 use windows::Win32::UI::TextServices::*;
-use windows::core::{BSTR, GUID, Result, implement};
+use windows::core::{BOOL, BSTR, GUID, Result, implement};
 
 #[implement(
     ITfCandidateListUIElementBehavior,

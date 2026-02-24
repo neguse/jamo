@@ -429,6 +429,7 @@ version = "0.1.0"
 dependencies = [
  "jamo-core",
  "windows",
+ "windows-core",
 ]
 
 [[package]]

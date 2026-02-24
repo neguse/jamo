@@ -3,7 +3,6 @@
 /// TSF ではテキスト変更は全て EditSession コールバック経由で行う。
 use std::cell::RefCell;
 
-use windows::Win32::Foundation::BOOL;
 use windows::Win32::UI::TextServices::*;
 use windows::core::{HSTRING, Interface as _, Result, implement};
 
