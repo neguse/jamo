@@ -22,6 +22,11 @@ pub const GUID_JAMO_PROFILE: GUID = GUID::from_u128(0x9b4f_d363_8f25_5c9b_a07e_2
 pub const GUID_PRESERVED_KEY_ONOFF: GUID =
     GUID::from_u128(0xac50_e474_9036_6dac_b18f_3e40_7c5d_9fb2);
 
+/// Alt+` 切替の PreservedKey GUID (HHKB 等)
+#[cfg(windows)]
+pub const GUID_PRESERVED_KEY_ALT_BACKQUOTE: GUID =
+    GUID::from_u128(0xbd61_f585_a147_7ebd_c290_4f51_8d6e_a0c4);
+
 /// DisplayAttribute: 入力中 (点線下線)
 #[cfg(windows)]
 pub const GUID_DA_INPUT: GUID = GUID::from_u128(0xbd61_f585_a147_7ebd_c290_4f51_8d6e_a0c3);

@@ -11,12 +11,18 @@ use windows::core::{BOOL, GUID, Interface as _, Ref, Result, implement};
 use crate::composition::{Action, InputState};
 use crate::edit_session;
 use crate::engine::ImeEngine;
-use crate::globals::GUID_PRESERVED_KEY_ONOFF;
+use crate::globals::{GUID_PRESERVED_KEY_ALT_BACKQUOTE, GUID_PRESERVED_KEY_ONOFF};
 
 /// PreservedKey: 半角/全角 (VK_KANJI = 0x19)
 const TF_PRESERVED_KEY_ONOFF: TF_PRESERVEDKEY = TF_PRESERVEDKEY {
     uVKey: 0x19, // VK_KANJI
     uModifiers: 0,
+};
+
+/// PreservedKey: Alt+` (HHKB 等の半角/全角キーがないキーボード用)
+const TF_PRESERVED_KEY_ALT_BACKQUOTE: TF_PRESERVEDKEY = TF_PRESERVEDKEY {
+    uVKey: 0xC0,        // VK_OEM_3 (backquote/tilde)
+    uModifiers: 0x0001, // TF_MOD_ALT
 };
 
 #[implement(
@@ -168,6 +174,14 @@ impl ITfTextInputProcessorEx_Impl for JamoTextService_Impl {
                 &TF_PRESERVED_KEY_ONOFF,
                 &[],
             )?;
+
+            // Alt+` キー登録 (HHKB 等)
+            keystroke_mgr.PreserveKey(
+                tid,
+                &GUID_PRESERVED_KEY_ALT_BACKQUOTE,
+                &TF_PRESERVED_KEY_ALT_BACKQUOTE,
+                &[],
+            )?;
         }
 
         Ok(())
@@ -189,6 +203,12 @@ impl ITfTextInputProcessor_Impl for JamoTextService_Impl {
                 keystroke_mgr.UnadviseKeyEventSink(client_id).ok();
                 keystroke_mgr
                     .UnpreserveKey(&GUID_PRESERVED_KEY_ONOFF, &TF_PRESERVED_KEY_ONOFF)
+                    .ok();
+                keystroke_mgr
+                    .UnpreserveKey(
+                        &GUID_PRESERVED_KEY_ALT_BACKQUOTE,
+                        &TF_PRESERVED_KEY_ALT_BACKQUOTE,
+                    )
                     .ok();
             }
         }
@@ -239,7 +259,7 @@ impl ITfKeyEventSink_Impl for JamoTextService_Impl {
 
     fn OnPreservedKey(&self, _pic: Ref<'_, ITfContext>, rguid: *const GUID) -> Result<BOOL> {
         unsafe {
-            if *rguid == GUID_PRESERVED_KEY_ONOFF {
+            if *rguid == GUID_PRESERVED_KEY_ONOFF || *rguid == GUID_PRESERVED_KEY_ALT_BACKQUOTE {
                 self.state.borrow_mut().toggle_mode();
                 Ok(BOOL(1))
             } else {
