@@ -9,7 +9,8 @@ license = "MIT"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-jamo-core = { path = "../jamo-core" }
+jamo-core = { path = "../jamo-core", features = ["ipc"] }
+serde_json = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows-core = "0.62"

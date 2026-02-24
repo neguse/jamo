@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use jamo_core::ipadic::IpaDict;
 
+mod ime_server;
 mod serve;
 
 fn main() {
@@ -32,6 +33,7 @@ fn print_usage() {
     eprintln!("Commands:");
     eprintln!("  convert [--dict DIR] <text>   かな漢字変換");
     eprintln!("  serve [--dict DIR] [--port N]  HTTPサーバー起動");
+    eprintln!("  serve --ime [--dict DIR]       IME IPCサーバー起動");
     eprintln!("  dict build [--dict DIR] -o <output>  辞書バイナリ構築");
     eprintln!("  dict merge --base <dir> --extra <path>... -o <output>  辞書マージ");
 }
@@ -115,6 +117,14 @@ fn cmd_convert(args: &[String]) {
 
 fn cmd_serve(args: &[String]) {
     let (dict_path, rest) = parse_dict_arg(args);
+
+    // --ime モード: IME IPC サーバー
+    if rest.iter().any(|a| a == "--ime") {
+        let dict = load_dict(dict_path.as_deref());
+        let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+        rt.block_on(ime_server::run(dict));
+        return;
+    }
 
     let mut port: u16 = 8080;
     let mut i = 0;

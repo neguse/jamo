@@ -1,6 +1,9 @@
 #[cfg(feature = "wasm")]
 pub mod wasm;
 
+#[cfg(feature = "ipc")]
+pub mod ipc;
+
 pub mod capi;
 
 pub mod bitvec;

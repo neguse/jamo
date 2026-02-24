@@ -1,140 +1,124 @@
-/// jamo-core ラッパー
+/// IME エンジン (IPC クライアント)
 ///
-/// 辞書ロード + 変換呼び出し。
-use std::path::{Path, PathBuf};
+/// Named Pipe (Windows) / Unix Socket (Linux) 経由で jamo-server と通信する。
+/// 辞書ロードは不要。サーバー側で辞書を保持する。
+use std::cell::RefCell;
+use std::io::{BufRead, BufReader, BufWriter, Write};
 
-use jamo_core::dict::Entry;
-use jamo_core::ipadic::IpaDict;
+use jamo_core::ipc::{IpcRequest, IpcResponse, PredictEntry};
 use jamo_core::viterbi::{Clause, ConvertResult, Segment};
 
+/// IPC 接続
+struct IpcConnection {
+    reader: BufReader<std::fs::File>,
+    writer: BufWriter<std::fs::File>,
+}
+
+impl IpcConnection {
+    /// Named Pipe / Unix Socket に接続
+    fn connect() -> Result<Self, String> {
+        #[cfg(windows)]
+        let file = {
+            std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(jamo_core::ipc::PIPE_NAME)
+                .map_err(|e| format!("pipe connect failed: {e}"))?
+        };
+
+        #[cfg(unix)]
+        let file = {
+            use std::os::unix::net::UnixStream;
+            let stream =
+                UnixStream::connect(jamo_core::ipc::SOCKET_PATH).map_err(|e| e.to_string())?;
+            // UnixStream → File は直接変換できないので、TcpStream のように使う
+            // 実際は Windows Named Pipe のみが本番パス
+            // Linux ではテストのために File ではなく UnixStream を使う
+            drop(stream);
+            return Err("Unix socket not supported via File; use test helpers".to_string());
+        };
+
+        #[cfg(not(any(windows, unix)))]
+        return Err("unsupported platform".to_string());
+
+        #[cfg(windows)]
+        {
+            let reader =
+                BufReader::new(file.try_clone().map_err(|e| format!("clone failed: {e}"))?);
+            let writer = BufWriter::new(file);
+            Ok(Self { reader, writer })
+        }
+    }
+
+    /// リクエスト送信 → レスポンス受信
+    fn send(&mut self, request: &IpcRequest) -> Result<IpcResponse, String> {
+        let json = serde_json::to_string(request).map_err(|e| e.to_string())?;
+        self.writer
+            .write_all(json.as_bytes())
+            .map_err(|e| e.to_string())?;
+        self.writer.write_all(b"\n").map_err(|e| e.to_string())?;
+        self.writer.flush().map_err(|e| e.to_string())?;
+
+        let mut line = String::new();
+        self.reader
+            .read_line(&mut line)
+            .map_err(|e| e.to_string())?;
+        serde_json::from_str(line.trim()).map_err(|e| e.to_string())
+    }
+}
+
+/// IME エンジン (IPC クライアントラッパー)
 pub struct ImeEngine {
-    dict: Option<IpaDict>,
+    conn: RefCell<Option<IpcConnection>>,
 }
 
 impl ImeEngine {
-    /// 辞書をロード
-    pub fn load(dict_path: &Path) -> Result<Self, String> {
-        let dict = IpaDict::load_binary(dict_path).map_err(|e| e.to_string())?;
-        Ok(Self { dict: Some(dict) })
-    }
-
-    /// デフォルトパスから辞書をロード
-    pub fn load_default() -> Self {
-        if let Some(path) = Self::find_dict_path() {
-            if let Ok(engine) = Self::load(&path) {
-                return engine;
-            }
+    /// IPC サーバーに接続を試みる
+    pub fn connect() -> Self {
+        let conn = IpcConnection::connect().ok();
+        if conn.is_some() {
+            eprintln!("jamo-ime: connected to IPC server");
+        } else {
+            eprintln!("jamo-ime: IPC server not available, will retry on first request");
         }
-        Self { dict: None }
+        Self {
+            conn: RefCell::new(conn),
+        }
     }
 
-    /// 辞書パスを探す
-    fn find_dict_path() -> Option<PathBuf> {
-        #[cfg(windows)]
-        {
-            if let Some(path) = Self::dict_path_from_registry() {
-                if path.exists() {
-                    return Some(path);
-                }
-            }
-            if let Some(path) = Self::dict_path_next_to_dll() {
-                if path.exists() {
-                    return Some(path);
-                }
-            }
-            if let Some(path) = Self::dict_path_appdata() {
-                if path.exists() {
-                    return Some(path);
+    /// リクエストを送信 (接続がなければ再接続を試みる)
+    fn send_request(&self, request: &IpcRequest) -> Option<IpcResponse> {
+        let mut conn_ref = self.conn.borrow_mut();
+
+        // 未接続なら再接続試行
+        if conn_ref.is_none() {
+            *conn_ref = IpcConnection::connect().ok();
+        }
+
+        if let Some(conn) = conn_ref.as_mut() {
+            match conn.send(request) {
+                Ok(response) => return Some(response),
+                Err(_) => {
+                    // 接続断: 次回再接続
+                    *conn_ref = None;
+                    return None;
                 }
             }
         }
+
         None
-    }
-
-    #[cfg(windows)]
-    fn dict_path_from_registry() -> Option<PathBuf> {
-        use windows::Win32::System::Registry::*;
-        use windows::core::w;
-
-        unsafe {
-            let mut hkey = Default::default();
-            let result = RegOpenKeyExW(
-                HKEY_CURRENT_USER,
-                w!("Software\\Jamo"),
-                Some(0),
-                KEY_READ,
-                &mut hkey,
-            );
-            if result.0 != 0 {
-                return None;
-            }
-
-            let mut buf = [0u16; 260];
-            let mut buf_len = (buf.len() * 2) as u32;
-            let mut reg_type = REG_VALUE_TYPE(0);
-            let result = RegQueryValueExW(
-                hkey,
-                w!("DictPath"),
-                None,
-                Some(&mut reg_type),
-                Some(buf.as_mut_ptr() as *mut u8),
-                Some(&mut buf_len),
-            );
-            let _ = RegCloseKey(hkey);
-
-            if result.0 != 0 {
-                return None;
-            }
-
-            let len = (buf_len as usize / 2).saturating_sub(1);
-            let path = String::from_utf16_lossy(&buf[..len]);
-            Some(PathBuf::from(path))
-        }
-    }
-
-    #[cfg(windows)]
-    fn dict_path_next_to_dll() -> Option<PathBuf> {
-        use crate::globals::get_dll_instance;
-        use windows::Win32::Foundation::MAX_PATH;
-        use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
-
-        let hmodule = get_dll_instance();
-        let mut path = [0u16; MAX_PATH as usize];
-        let len = unsafe { GetModuleFileNameW(Some(hmodule), &mut path) } as usize;
-        if len == 0 {
-            return None;
-        }
-        let dll_path = PathBuf::from(String::from_utf16_lossy(&path[..len]));
-        dll_path.parent().map(|dir| dir.join("ipadic.dict"))
-    }
-
-    #[cfg(windows)]
-    fn dict_path_appdata() -> Option<PathBuf> {
-        std::env::var("APPDATA")
-            .ok()
-            .map(|appdata| PathBuf::from(appdata).join("Jamo").join("ipadic.dict"))
     }
 
     /// かな漢字変換
     pub fn convert(&self, hiragana: &str, n: usize) -> ConvertResult {
-        match &self.dict {
-            Some(dict) => jamo_core::convert_nbest(hiragana, dict, dict, n),
-            None => {
-                // 辞書なし: ひらがなをそのまま1文節として返す
-                ConvertResult {
-                    segments: vec![Segment {
-                        surface: hiragana.to_string(),
-                        yomi: hiragana.to_string(),
-                        candidates: vec![hiragana.to_string()],
-                        pos_type: 0,
-                    }],
-                    clauses: vec![Clause {
-                        surface: hiragana.to_string(),
-                        yomi: hiragana.to_string(),
-                        candidates: vec![hiragana.to_string()],
-                    }],
-                }
-            }
+        let request = IpcRequest::Convert {
+            hiragana: hiragana.to_string(),
+            n,
+        };
+
+        match self.send_request(&request) {
+            Some(IpcResponse::Convert { result }) => result,
+            _ => fallback_result(hiragana),
         }
     }
 
@@ -147,22 +131,47 @@ impl ImeEngine {
         delta: i32,
         n: usize,
     ) -> Option<ConvertResult> {
-        let dict = self.dict.as_ref()?;
-        let new_boundaries = jamo_core::resize_boundaries(input, boundaries, clause, delta)?;
-        Some(jamo_core::convert_with_boundaries(
-            input,
-            &new_boundaries,
-            dict,
-            dict,
+        let request = IpcRequest::Resize {
+            input: input.to_string(),
+            boundaries: boundaries.to_vec(),
+            clause,
+            delta,
             n,
-        ))
+        };
+
+        match self.send_request(&request) {
+            Some(IpcResponse::Convert { result }) => Some(result),
+            _ => None,
+        }
     }
 
     /// 予測変換
-    pub fn predict(&self, prefix: &str, limit: usize) -> Vec<Entry> {
-        match &self.dict {
-            Some(dict) => dict.prefix_search(prefix, limit),
-            None => vec![],
+    pub fn predict(&self, prefix: &str, limit: usize) -> Vec<PredictEntry> {
+        let request = IpcRequest::Predict {
+            prefix: prefix.to_string(),
+            limit,
+        };
+
+        match self.send_request(&request) {
+            Some(IpcResponse::Predict { entries }) => entries,
+            _ => vec![],
         }
+    }
+}
+
+/// IPC サーバー未接続時のフォールバック (ひらがなをそのまま返す)
+fn fallback_result(hiragana: &str) -> ConvertResult {
+    ConvertResult {
+        segments: vec![Segment {
+            surface: hiragana.to_string(),
+            yomi: hiragana.to_string(),
+            candidates: vec![hiragana.to_string()],
+            pos_type: 0,
+        }],
+        clauses: vec![Clause {
+            surface: hiragana.to_string(),
+            yomi: hiragana.to_string(),
+            candidates: vec![hiragana.to_string()],
+        }],
     }
 }

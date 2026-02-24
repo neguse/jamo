@@ -168,8 +168,8 @@ impl ITfTextInputProcessorEx_Impl for JamoTextService_Impl {
         *self.thread_mgr.borrow_mut() = ptim.clone();
         *self.client_id.borrow_mut() = tid;
 
-        // 辞書ロード (バックグラウンドでもよいが、まずは同期)
-        let _ = self.engine.set(ImeEngine::load_default());
+        // IPC サーバーに接続 (辞書は jamo serve --ime 側で保持)
+        let _ = self.engine.set(ImeEngine::connect());
 
         // キーイベント登録
         unsafe {

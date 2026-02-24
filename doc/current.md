@@ -34,11 +34,15 @@
 | T080 かな漢字変換統合 | engine.rs (辞書ロード + convert/resize/predict) |
 | T081-T083 候補選択/文節伸縮/候補UI | Space/↓/←/→, Shift+←/→, OS標準UI |
 | T084 GHA Windows CI | windows-latest ビルド + テスト |
+| T085 IME マルチプロセス化 | IPC プロトコル + Named Pipe + DLL プロキシ化 |
+| T086 デプロイスクリプト | scripts/deploy-ime.ps1 |
 
 ### 残タスク
 
-- Windows 実機テスト (regsvr32 → メモ帳)
+- Windows 実機テスト (`jamo serve --ime` + regsvr32 → メモ帳)
 - 辞書同梱インストーラー
+- IPC タイムアウト設定
+- サーバー自動起動 (DLL からサーバープロセスを spawn)
 
 ## パフォーマンス
 
@@ -71,33 +75,33 @@
 
 ## テスト
 
-全111テスト通過:
-- jamo-core: 95 (60 unit + 35 romaji + 2 accuracy)
-- jamo-cli: 6 (4 CLI + 2 HTTP)
+全127テスト通過:
+- jamo-core: 101 (60 unit + 35 romaji + 6 IPC)
+- jamo-cli: 8 (4 CLI + 2 HTTP + 2 IME IPC)
 - jamo-ime: 16 (composition 状態マシン)
+- accuracy: 2
 
 ## プロジェクト構成
 
 ```
 jamo/
 ├── jamo-core/          # 変換エンジン (Rust lib)
-│   └── src/romaji.rs   # [NEW] ローマ字→ひらがな変換 FSM
-├── jamo-cli/           # CLI・サーバー (Rust bin)
-├── jamo-ime/           # [NEW] Windows IME (TSF COM DLL)
 │   └── src/
-│       ├── lib.rs              # DllMain + 4 COM exports
-│       ├── globals.rs          # GUID, 定数, グローバル状態
-│       ├── composition.rs      # 状態マシン (Platform非依存)
-│       ├── class_factory.rs    # IClassFactory
-│       ├── text_service.rs     # ITfTextInputProcessorEx
-│       ├── edit_session.rs     # EditSession パターン
-│       ├── display_attribute.rs # 3種下線
-│       ├── engine.rs           # jamo-core ラッパー
-│       ├── candidate_ui.rs     # 候補ウィンドウ
-│       └── registry.rs         # COM/TSF 登録
+│       ├── ipc.rs      # [NEW] IPC プロトコル型 (ipc feature)
+│       └── romaji.rs   # ローマ字→ひらがな変換 FSM
+├── jamo-cli/           # CLI・サーバー (Rust bin)
+│   └── src/
+│       ├── ime_server.rs # [NEW] IME IPC サーバー (Named Pipe / Unix Socket)
+│       ├── main.rs       # convert/serve/dict + serve --ime
+│       └── serve.rs      # HTTP API サーバー
+├── jamo-ime/           # Windows IME (TSF COM DLL → IPC プロキシ)
+│   └── src/
+│       ├── engine.rs   # [CHANGED] IPC クライアント (辞書ロード削除)
+│       └── ...         # TSF COM 実装
+├── scripts/            # [NEW] 開発スクリプト
+│   └── deploy-ime.ps1  # DLL デプロイ (リネーム方式)
 ├── jamo-worker/        # CF Worker/DO (TypeScript)
 ├── doc/                # ドキュメント
-├── dicts/              # 辞書
 └── .github/workflows/  # CI (Linux + Windows)
 ```
 

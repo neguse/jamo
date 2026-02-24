@@ -231,3 +231,31 @@
 - よかったこと: composition.rs を Platform 非依存にした設計が良い。Linux 上で 16 テストを実行可能。romaji.rs も完全に Platform 非依存で 35 テスト。windows-rs 0.62 では implement マクロが windows-core 経由で自動的に使える (features に指定不要)。
 - 判断: All-Rust (windows-rs) アプローチを採用。jamo-core を直接 Rust ライブラリとして呼び出すため JSON/C API 不要。ローマ字変換は MS-IME 方式 (nn は両方消費して「ん」を確定)。辞書なしのフォールバック (engine.rs の Option<IpaDict>) で起動だけはできる設計。
 - 残課題: Windows 実機テスト (regsvr32 → メモ帳)。辞書同梱インストーラー。edit_session.rs の StartComposition で CompositionSink の受け渡しが todo!() のまま。
+
+### T085+T086: IME マルチプロセス化 + デプロイスクリプト ✓ (2026-02-24)
+- やったこと:
+  - Phase A: `scripts/deploy-ime.ps1` を作成。DLL リネーム→コピー→explorer 再起動でデプロイ1コマンド化。
+  - Phase B: IME をマルチプロセス方式に変更。TSF DLL を IPC クライアント化し、変換ロジックを `jamo serve --ime` 別プロセスに分離。
+    - jamo-core に `ipc` feature + `ipc.rs` モジュール追加 (IPC プロトコル型定義、NDJSON形式)
+    - ConvertResult/Clause/Segment に serde derives 追加 (ipc feature ゲート)
+    - jamo-cli に `ime_server.rs` 追加 (Named Pipe (Windows) / Unix Socket (Linux) サーバー)
+    - jamo-cli の `serve --ime` サブコマンド追加
+    - jamo-ime の engine.rs を IPC クライアントに完全書き換え (辞書ロード削除、Named Pipe 接続)
+    - IPC 未接続時はフォールバック (ひらがなをそのまま返す)、自動再接続機能付き
+- 変更したファイル:
+  - scripts/deploy-ime.ps1 (新規)
+  - jamo-core/Cargo.toml, jamo-core/src/lib.rs, jamo-core/src/viterbi.rs, jamo-core/src/ipc.rs (新規)
+  - jamo-cli/Cargo.toml, jamo-cli/src/main.rs, jamo-cli/src/ime_server.rs (新規)
+  - jamo-ime/Cargo.toml, jamo-ime/src/engine.rs, jamo-ime/src/text_service.rs
+  - doc/tasks.md, doc/current.md, doc/done.md
+- よかったこと:
+  - NDJSON プロトコルはシンプルで実装が容易。BufReader/read_line で十分。
+  - `#[cfg_attr(feature = "ipc", derive(serde::Serialize, serde::Deserialize))]` で既存型を非侵入的に拡張できた。
+  - IPC 型を jamo-core に置くことでクライアント/サーバー間の型不整合を排除。
+  - DLL 側は RefCell<Option<IpcConnection>> で single-threaded COM と相性良い。
+- 判断:
+  - Named Pipe (Windows) + Unix Socket (Linux) を選択。TCP localhost も可能だが、Named Pipe はセキュリティ的に優れ (ACL 制御可)、パイプ名で識別が容易。
+  - IPC プロトコルは JSON (NDJSON)。バイナリは速いが、デバッグ容易性と開発効率を優先。
+  - DLL 側の辞書ロードを完全削除。サーバー側に辞書を集約することで DLL サイズ削減 + ロード時間短縮。
+  - Mozc/azooKey 等の先行 IME と同じマルチプロセスパターンを採用。
+- 残課題: Windows 実機テスト。IPC タイムアウト設定。サーバー自動起動 (DLL からサーバープロセスを起動)。

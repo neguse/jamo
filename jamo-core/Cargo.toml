@@ -10,6 +10,7 @@ categories = ["text-processing"]
 
 [features]
 wasm = ["wasm-bindgen", "serde", "serde_json"]
+ipc = ["serde", "serde_json"]
 
 [dependencies]
 wasm-bindgen = { version = "0.2", optional = true }

@@ -8,7 +8,7 @@ repository = "https://github.com/neguse/jamo"
 
 [dependencies]
 axum = "0.8.8"
-jamo-core = { path = "../jamo-core" }
+jamo-core = { path = "../jamo-core", features = ["ipc"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "net", "io-util"] }

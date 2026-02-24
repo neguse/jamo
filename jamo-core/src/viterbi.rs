@@ -18,6 +18,7 @@ impl ConnectionCost for SimpleConnectionCost {
 
 /// 変換結果の1単語
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "ipc", derive(serde::Serialize, serde::Deserialize))]
 pub struct Segment {
     /// 表層形 (最良候補)
     pub surface: String,
@@ -31,6 +32,7 @@ pub struct Segment {
 
 /// 文節 (自立語 + 付属語のグループ)
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "ipc", derive(serde::Serialize, serde::Deserialize))]
 pub struct Clause {
     /// 表層形 (文節全体)
     pub surface: String,
@@ -42,6 +44,7 @@ pub struct Clause {
 
 /// 変換結果
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "ipc", derive(serde::Serialize, serde::Deserialize))]
 pub struct ConvertResult {
     /// 単語単位のセグメント
     pub segments: Vec<Segment>,
