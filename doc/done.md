@@ -219,3 +219,15 @@
 - よかったこと: Iter 0〜4 の全タスクが完了。68テスト全通過の状態で 1.0 を迎えられた。
 - 判断: crates.io publish と git tag は手動で行う (CI/CD 未構築のため)。Cargo.toml の準備のみ自動化。
 - 残課題: `cargo publish`, `git tag v1.0.0`, GitHub Release 作成。
+
+### T070-T084: Windows IME (Iter 5) ✓ (2026-02-24)
+- やったこと: jamo-core にローマ字→ひらがな変換 FSM (romaji.rs) を追加。jamo-ime crate を新規作成し、Windows TSF COM DLL として IME 全体を実装。Platform 非依存の状態マシン (composition.rs) + Windows 専用 TSF コード (#[cfg(windows)] ゲート)。GHA に Windows CI ジョブ追加。
+- 変更したファイル:
+  - jamo-core/src/romaji.rs (新規), jamo-core/src/lib.rs
+  - jamo-ime/ (新規crate): Cargo.toml, src/lib.rs, src/globals.rs, src/composition.rs, src/class_factory.rs, src/text_service.rs, src/edit_session.rs, src/display_attribute.rs, src/engine.rs, src/candidate_ui.rs, src/registry.rs
+  - Cargo.toml (workspace members)
+  - .github/workflows/ci.yml (Windows ジョブ追加)
+  - doc/tasks.md, doc/current.md, doc/done.md
+- よかったこと: composition.rs を Platform 非依存にした設計が良い。Linux 上で 16 テストを実行可能。romaji.rs も完全に Platform 非依存で 35 テスト。windows-rs 0.62 では implement マクロが windows-core 経由で自動的に使える (features に指定不要)。
+- 判断: All-Rust (windows-rs) アプローチを採用。jamo-core を直接 Rust ライブラリとして呼び出すため JSON/C API 不要。ローマ字変換は MS-IME 方式 (nn は両方消費して「ん」を確定)。辞書なしのフォールバック (engine.rs の Option<IpaDict>) で起動だけはできる設計。
+- 残課題: Windows 実機テスト (regsvr32 → メモ帳)。辞書同梱インストーラー。edit_session.rs の StartComposition で CompositionSink の受け渡しが todo!() のまま。

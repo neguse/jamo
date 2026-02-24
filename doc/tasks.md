@@ -159,6 +159,41 @@ Iter 1 の骨格に実データを流し込む。辞書構造を差し替え、�
 
 ---
 
+## Iter 5: Windows IME
+
+完了条件: Windows のメモ帳でローマ字入力→ひらがな→漢字変換ができる
+
+| # | タスク | 成果物 |
+|---|--------|--------|
+| T070 | ローマ字エンジン | romaji.rs (jamo-core) |
+| T071 | jamo-ime crate 骨格 | Cargo.toml, DllMain, COM exports |
+| T072 | COM/TSF 登録 | registry.rs |
+| T073 | IClassFactory | class_factory.rs |
+| T074 | TextInputProcessor | text_service.rs (Activate/Deactivate) |
+| T075 | KeyEventSink | OnTestKeyDown/OnKeyDown |
+| T076 | EditSession | edit_session.rs |
+| T077 | Composition 状態マシン | composition.rs |
+| T078 | ひらがな Composition | ローマ字→ひらがな下線表示 |
+| T079 | DisplayAttribute | 3種下線スタイル |
+| T080 | かな漢字変換統合 | engine.rs + Converting 状態 |
+| T081 | 候補選択 | Space/↓/←/→ |
+| T082 | 文節伸縮 | Shift+←/→ |
+| T083 | 候補ウィンドウ | candidate_ui.rs (OS標準UI) |
+| T084 | GHA Windows CI | windows-latest ビルドジョブ |
+
+### 依存関係
+
+```
+T070 → T077 → T078
+T071 → T072 → T073 → T074 → T075 → T076
+T076 + T078 → T079
+T079 + T080 → T081 → T082
+T081 → T083
+T071 → T084
+```
+
+---
+
 ## 依存関係
 
 ```
@@ -180,6 +215,12 @@ Iter 3: T033 → T041 → T042 → T043
                T048
 
 Iter 4: T050 → T051 → T052 → T053 → T054 → T055 → T056
+
+Iter 5: T070 → T077 → T078 → T079 → T081 → T082 → T083
+        T071 → T072 → T073 → T074 → T075 → T076
+        T076 + T078 → T079
+        T079 + T080 → T081
+        T071 → T084
 ```
 
 ## 反復深化のルール

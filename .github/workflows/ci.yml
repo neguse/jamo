@@ -24,3 +24,16 @@ jobs:
         run: cargo clippy -- -D warnings
       - name: test
         run: cargo test
+
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build jamo-ime
+        run: cargo build --release -p jamo-ime
+      - name: test jamo-core
+        run: cargo test -p jamo-core
+      - name: test jamo-ime
+        run: cargo test -p jamo-ime

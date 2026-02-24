@@ -13,18 +13,32 @@
 | 2 | ほぼ完了 | 実データ |
 | 3 | 完了 | 運用 |
 | 4 | 完了 | 品質→1.0 |
+| 5 | 進行中 | Windows IME |
 
-## Iter 4 完了タスク
+## Iter 5: Windows IME
+
+### 完了タスク
 
 | タスク | 備考 |
 |--------|------|
-| T050 ベンチマーク | criterion, convert 10-123us, dict_load 64ms |
-| T051 精度評価 | 10カテゴリ別, 文一致 48.1%, 文字精度 69.1% |
-| T052 NEologd | load_merge + dict merge CLI |
-| T053 API仕様 | OpenAPI 3.0.3, doc/api.yaml |
-| T054 辞書フォーマット | doc/dict-format.md, v2 |
-| T055 ドキュメント | README.md |
-| T056 1.0 リリース | LICENSE, Cargo.toml メタデータ, v1.0.0 タグ |
+| T070 ローマ字エンジン | romaji.rs, 35テスト, ~200パターン |
+| T071 jamo-ime crate 骨格 | cdylib, DllMain + 4 COM exports |
+| T072 COM/TSF 登録 | registry.rs (CLSID, Profile, Category) |
+| T073 IClassFactory | class_factory.rs |
+| T074 TextInputProcessor | text_service.rs (Activate/Deactivate) |
+| T075 KeyEventSink | OnTestKeyDown/OnKeyDown |
+| T076 EditSession | edit_session.rs |
+| T077 Composition 状態マシン | composition.rs, 16テスト, Platform非依存 |
+| T078 ひらがな Composition | ローマ字→ひらがな + TSF統合 |
+| T079 DisplayAttribute | 3種下線 (Input/Converted/Focused) |
+| T080 かな漢字変換統合 | engine.rs (辞書ロード + convert/resize/predict) |
+| T081-T083 候補選択/文節伸縮/候補UI | Space/↓/←/→, Shift+←/→, OS標準UI |
+| T084 GHA Windows CI | windows-latest ビルド + テスト |
+
+### 残タスク
+
+- Windows 実機テスト (regsvr32 → メモ帳)
+- 辞書同梱インストーラー
 
 ## パフォーマンス
 
@@ -57,7 +71,35 @@
 
 ## テスト
 
-全68テスト通過 (jamo-core: 60 unit + 2 accuracy, jamo-cli: 4 CLI + 2 HTTP)
+全111テスト通過:
+- jamo-core: 95 (60 unit + 35 romaji + 2 accuracy)
+- jamo-cli: 6 (4 CLI + 2 HTTP)
+- jamo-ime: 16 (composition 状態マシン)
+
+## プロジェクト構成
+
+```
+jamo/
+├── jamo-core/          # 変換エンジン (Rust lib)
+│   └── src/romaji.rs   # [NEW] ローマ字→ひらがな変換 FSM
+├── jamo-cli/           # CLI・サーバー (Rust bin)
+├── jamo-ime/           # [NEW] Windows IME (TSF COM DLL)
+│   └── src/
+│       ├── lib.rs              # DllMain + 4 COM exports
+│       ├── globals.rs          # GUID, 定数, グローバル状態
+│       ├── composition.rs      # 状態マシン (Platform非依存)
+│       ├── class_factory.rs    # IClassFactory
+│       ├── text_service.rs     # ITfTextInputProcessorEx
+│       ├── edit_session.rs     # EditSession パターン
+│       ├── display_attribute.rs # 3種下線
+│       ├── engine.rs           # jamo-core ラッパー
+│       ├── candidate_ui.rs     # 候補ウィンドウ
+│       └── registry.rs         # COM/TSF 登録
+├── jamo-worker/        # CF Worker/DO (TypeScript)
+├── doc/                # ドキュメント
+├── dicts/              # 辞書
+└── .github/workflows/  # CI (Linux + Windows)
+```
 
 ## 1.0 後の課題
 
