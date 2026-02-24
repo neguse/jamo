@@ -141,16 +141,15 @@ cargo run -- dict build -o data/ipadic.dict
 2. DLL と辞書を配置:
 
 ```powershell
-# 例: C:\Program Files\Jamo に配置
-mkdir "C:\Program Files\Jamo"
-copy target\release\jamo_ime.dll "C:\Program Files\Jamo\"
-copy data\ipadic.dict "C:\Program Files\Jamo\"
+mkdir "$env:LOCALAPPDATA\Jamo"
+copy target\release\jamo_ime.dll "$env:LOCALAPPDATA\Jamo\"
+copy data\ipadic.dict "$env:LOCALAPPDATA\Jamo\"
 ```
 
-3. DLL を登録 (管理者権限で実行):
+3. DLL を登録 (管理者権限不要):
 
 ```powershell
-regsvr32 "C:\Program Files\Jamo\jamo_ime.dll"
+regsvr32 "$env:LOCALAPPDATA\Jamo\jamo_ime.dll"
 ```
 
 4. Windows の設定 → 時刻と言語 → 言語 → 日本語 → キーボード で「Jamo」を選択。
@@ -166,7 +165,7 @@ regsvr32 "C:\Program Files\Jamo\jamo_ime.dll"
 ### アンインストール
 
 ```powershell
-regsvr32 /u "C:\Program Files\Jamo\jamo_ime.dll"
+regsvr32 /u "$env:LOCALAPPDATA\Jamo\jamo_ime.dll"
 ```
 
 ### 操作方法

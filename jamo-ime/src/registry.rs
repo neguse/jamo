@@ -6,7 +6,7 @@ use windows::Win32::Foundation::MAX_PATH;
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 use windows::Win32::System::Registry::{
-    HKEY_CLASSES_ROOT, KEY_WRITE, REG_SZ, RegCreateKeyExW, RegDeleteTreeW, RegSetValueExW,
+    HKEY_CURRENT_USER, KEY_WRITE, REG_SZ, RegCreateKeyExW, RegDeleteTreeW, RegSetValueExW,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::HKL;
 use windows::Win32::UI::TextServices::{
@@ -55,15 +55,19 @@ pub fn unregister() -> Result<(), HRESULT> {
     Ok(())
 }
 
+/// Per-user COM 登録のルートキー
+/// HKCU\Software\Classes は HKCR のユーザー側オーバーレイ。管理者権限不要。
+const REG_ROOT: &str = "Software\\Classes";
+
 fn register_com_clsid(dll_path: &str) -> Result<(), HRESULT> {
     let clsid_str = format!("{{{:?}}}", CLSID_JAMO_TEXT_SERVICE);
-    let key_path = format!("CLSID\\{clsid_str}\\InprocServer32");
+    let key_path = format!("{REG_ROOT}\\CLSID\\{clsid_str}\\InprocServer32");
     let key_path_w = HSTRING::from(&key_path);
 
     unsafe {
         let mut hkey = Default::default();
         let err = RegCreateKeyExW(
-            HKEY_CLASSES_ROOT,
+            HKEY_CURRENT_USER,
             &key_path_w,
             Some(0),
             None,
@@ -113,11 +117,11 @@ fn register_com_clsid(dll_path: &str) -> Result<(), HRESULT> {
 
 fn unregister_com_clsid() -> Result<(), HRESULT> {
     let clsid_str = format!("{{{:?}}}", CLSID_JAMO_TEXT_SERVICE);
-    let key_path = format!("CLSID\\{clsid_str}");
+    let key_path = format!("{REG_ROOT}\\CLSID\\{clsid_str}");
     let key_path_w = HSTRING::from(&key_path);
 
     unsafe {
-        let err = RegDeleteTreeW(HKEY_CLASSES_ROOT, &key_path_w);
+        let err = RegDeleteTreeW(HKEY_CURRENT_USER, &key_path_w);
         if err.0 != 0 {
             return Err(windows::Win32::Foundation::E_FAIL);
         }
