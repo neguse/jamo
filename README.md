@@ -118,12 +118,77 @@ R2 バケットに辞書バイナリ (`ipadic.dict`) をアップロード:
 wrangler r2 object put DICT_BUCKET/ipadic.dict --file data/ipadic.dict
 ```
 
+## Windows IME
+
+Windows 用の TSF (Text Services Framework) IME として動作する DLL。ローマ字入力→ひらがな→漢字変換を提供。
+
+### ビルド
+
+```bash
+cargo build --release -p jamo-ime
+```
+
+成果物: `target/release/jamo_ime.dll`
+
+### インストール
+
+1. 辞書バイナリを構築 (未作成の場合):
+
+```bash
+cargo run -- dict build -o data/ipadic.dict
+```
+
+2. DLL と辞書を配置:
+
+```powershell
+# 例: C:\Program Files\Jamo に配置
+mkdir "C:\Program Files\Jamo"
+copy target\release\jamo_ime.dll "C:\Program Files\Jamo\"
+copy data\ipadic.dict "C:\Program Files\Jamo\"
+```
+
+3. DLL を登録 (管理者権限で実行):
+
+```powershell
+regsvr32 "C:\Program Files\Jamo\jamo_ime.dll"
+```
+
+4. Windows の設定 → 時刻と言語 → 言語 → 日本語 → キーボード で「Jamo」を選択。
+
+### 辞書の配置場所
+
+以下の順序で辞書ファイル `ipadic.dict` を検索する:
+
+1. レジストリ `HKCU\Software\Jamo\DictPath` に指定されたパス
+2. DLL と同じディレクトリ
+3. `%APPDATA%\Jamo\ipadic.dict`
+
+### アンインストール
+
+```powershell
+regsvr32 /u "C:\Program Files\Jamo\jamo_ime.dll"
+```
+
+### 操作方法
+
+| キー | 動作 |
+|------|------|
+| 半角/全角 | IME オン/オフ切替 |
+| 英数字キー | ローマ字入力 → ひらがな変換 |
+| Space | かな漢字変換 / 次の候補 |
+| Enter | 確定 |
+| Escape | 変換取消 |
+| ←/→ | 文節移動 |
+| Shift+←/→ | 文節伸縮 |
+| Backspace | 1文字削除 |
+
 ## プロジェクト構成
 
 ```
 jamo/
 ├── jamo-core/      変換エンジン (Rust lib)
 ├── jamo-cli/       CLI / HTTP サーバー / 辞書ビルド (Rust bin)
+├── jamo-ime/       Windows IME (TSF DLL, cdylib)
 ├── jamo-worker/    Cloudflare Worker / Durable Object (TypeScript)
 ├── data/           辞書データ
 │   ├── ipadic/     IPAdic ソース CSV
