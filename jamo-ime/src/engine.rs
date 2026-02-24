@@ -94,11 +94,11 @@ impl ImeEngine {
 
     #[cfg(windows)]
     fn dict_path_next_to_dll() -> Option<PathBuf> {
-        use crate::globals::DLL_INSTANCE;
-        use windows::Win32::Foundation::{HMODULE, MAX_PATH};
+        use crate::globals::get_dll_instance;
+        use windows::Win32::Foundation::MAX_PATH;
         use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 
-        let hmodule = DLL_INSTANCE.get().copied().unwrap_or(HMODULE::default());
+        let hmodule = get_dll_instance();
         let mut path = [0u16; MAX_PATH as usize];
         let len = unsafe { GetModuleFileNameW(Some(hmodule), &mut path) } as usize;
         if len == 0 {

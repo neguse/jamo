@@ -14,38 +14,42 @@ enum AttributeKind {
     Focused,
 }
 
+// --- 公開ヘルパー (text_service.rs から委任呼び出し用) ---
+
+pub fn enum_display_attribute_info() -> Result<IEnumTfDisplayAttributeInfo> {
+    let enumerator = DisplayAttributeInfoEnum {
+        index: std::cell::Cell::new(0),
+    };
+    Ok(enumerator.into())
+}
+
+pub fn get_display_attribute_info(guid: *const GUID) -> Result<ITfDisplayAttributeInfo> {
+    unsafe {
+        let guid = &*guid;
+        if *guid == GUID_DA_INPUT {
+            Ok(JamoDisplayAttributeInfo(AttributeKind::Input).into())
+        } else if *guid == GUID_DA_CONVERTED {
+            Ok(JamoDisplayAttributeInfo(AttributeKind::Converted).into())
+        } else if *guid == GUID_DA_FOCUSED {
+            Ok(JamoDisplayAttributeInfo(AttributeKind::Focused).into())
+        } else {
+            Err(windows::Win32::Foundation::E_INVALIDARG.into())
+        }
+    }
+}
+
 // --- ITfDisplayAttributeProvider ---
 
 #[implement(ITfDisplayAttributeProvider)]
 pub struct JamoDisplayAttributeProvider;
 
-impl JamoDisplayAttributeProvider {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
 impl ITfDisplayAttributeProvider_Impl for JamoDisplayAttributeProvider_Impl {
     fn EnumDisplayAttributeInfo(&self) -> Result<IEnumTfDisplayAttributeInfo> {
-        let enumerator = DisplayAttributeInfoEnum {
-            index: std::cell::Cell::new(0),
-        };
-        Ok(enumerator.into())
+        enum_display_attribute_info()
     }
 
     fn GetDisplayAttributeInfo(&self, guid: *const GUID) -> Result<ITfDisplayAttributeInfo> {
-        unsafe {
-            let guid = &*guid;
-            if *guid == GUID_DA_INPUT {
-                Ok(JamoDisplayAttributeInfo(AttributeKind::Input).into())
-            } else if *guid == GUID_DA_CONVERTED {
-                Ok(JamoDisplayAttributeInfo(AttributeKind::Converted).into())
-            } else if *guid == GUID_DA_FOCUSED {
-                Ok(JamoDisplayAttributeInfo(AttributeKind::Focused).into())
-            } else {
-                Err(windows::Win32::Foundation::E_INVALIDARG.into())
-            }
-        }
+        get_display_attribute_info(guid)
     }
 }
 
@@ -122,32 +126,24 @@ impl IEnumTfDisplayAttributeInfo_Impl for DisplayAttributeInfoEnum_Impl {
 struct JamoDisplayAttributeInfo(AttributeKind);
 
 impl ITfDisplayAttributeInfo_Impl for JamoDisplayAttributeInfo_Impl {
-    fn GetGUID(&self, pguid: *mut GUID) -> Result<()> {
-        let guid = match self.0 {
+    fn GetGUID(&self) -> Result<GUID> {
+        Ok(match self.0 {
             AttributeKind::Input => GUID_DA_INPUT,
             AttributeKind::Converted => GUID_DA_CONVERTED,
             AttributeKind::Focused => GUID_DA_FOCUSED,
-        };
-        unsafe {
-            *pguid = guid;
-        }
-        Ok(())
+        })
     }
 
-    fn GetDescription(&self, pbstrDesc: *mut BSTR) -> Result<()> {
-        let desc = match self.0 {
+    fn GetDescription(&self) -> Result<BSTR> {
+        Ok(BSTR::from(match self.0 {
             AttributeKind::Input => "Jamo Input",
             AttributeKind::Converted => "Jamo Converted",
             AttributeKind::Focused => "Jamo Focused",
-        };
-        unsafe {
-            *pbstrDesc = BSTR::from(desc);
-        }
-        Ok(())
+        }))
     }
 
-    fn GetAttributeInfo(&self, pda: *mut TF_DISPLAYATTRIBUTE) -> Result<()> {
-        let attr = match self.0 {
+    fn GetAttributeInfo(&self) -> Result<TF_DISPLAYATTRIBUTE> {
+        Ok(match self.0 {
             AttributeKind::Input => TF_DISPLAYATTRIBUTE {
                 crText: TF_DA_COLOR {
                     r#type: TF_DA_COLORTYPE(0), // TF_CT_NONE
@@ -163,7 +159,7 @@ impl ITfDisplayAttributeInfo_Impl for JamoDisplayAttributeInfo_Impl {
                     r#type: TF_DA_COLORTYPE(0),
                     ..Default::default()
                 },
-                bAttr: TF_DA_ATTR_INPUT,
+                bAttr: TF_ATTR_INPUT,
             },
             AttributeKind::Converted => TF_DISPLAYATTRIBUTE {
                 crText: TF_DA_COLOR {
@@ -180,7 +176,7 @@ impl ITfDisplayAttributeInfo_Impl for JamoDisplayAttributeInfo_Impl {
                     r#type: TF_DA_COLORTYPE(0),
                     ..Default::default()
                 },
-                bAttr: TF_DA_ATTR_CONVERTED,
+                bAttr: TF_ATTR_CONVERTED,
             },
             AttributeKind::Focused => TF_DISPLAYATTRIBUTE {
                 crText: TF_DA_COLOR {
@@ -197,13 +193,9 @@ impl ITfDisplayAttributeInfo_Impl for JamoDisplayAttributeInfo_Impl {
                     r#type: TF_DA_COLORTYPE(0),
                     ..Default::default()
                 },
-                bAttr: TF_DA_ATTR_TARGET_CONVERTED,
+                bAttr: TF_ATTR_TARGET_CONVERTED,
             },
-        };
-        unsafe {
-            *pda = attr;
-        }
-        Ok(())
+        })
     }
 
     fn SetAttributeInfo(&self, _pda: *const TF_DISPLAYATTRIBUTE) -> Result<()> {

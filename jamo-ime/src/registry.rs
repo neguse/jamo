@@ -2,9 +2,7 @@
 ///
 /// regsvr32 で DLL を登録したとき、Windows が IME として認識するための
 /// 3段階の登録処理 (COM CLSID, TSF Profile, TSF Category)。
-use std::ffi::c_void;
-
-use windows::Win32::Foundation::{HMODULE, MAX_PATH};
+use windows::Win32::Foundation::MAX_PATH;
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 use windows::Win32::System::Registry::{
@@ -17,12 +15,12 @@ use windows::Win32::UI::TextServices::{
 };
 use windows::core::{HRESULT, HSTRING, Interface as _, w};
 
-use crate::globals::{CLSID_JAMO_TEXT_SERVICE, DLL_INSTANCE, GUID_JAMO_PROFILE};
+use crate::globals::{CLSID_JAMO_TEXT_SERVICE, GUID_JAMO_PROFILE, get_dll_instance};
 
 const LANGID_JAPANESE: u16 = 0x0411;
 
 fn get_dll_path() -> Result<String, HRESULT> {
-    let hmodule = DLL_INSTANCE.get().copied().unwrap_or(HMODULE::default());
+    let hmodule = get_dll_instance();
     let mut path = [0u16; MAX_PATH as usize];
     let len = unsafe { GetModuleFileNameW(Some(hmodule), &mut path) } as usize;
     if len == 0 {

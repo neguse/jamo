@@ -29,13 +29,13 @@ mod dll {
     use windows::core::{BOOL, GUID, HRESULT, Interface as _};
 
     use crate::class_factory::JamoClassFactory;
-    use crate::globals::{CLSID_JAMO_TEXT_SERVICE, DLL_INSTANCE, SERVER_LOCK_COUNT};
+    use crate::globals::{CLSID_JAMO_TEXT_SERVICE, SERVER_LOCK_COUNT, set_dll_instance};
 
     /// DLL エントリポイント
     #[unsafe(no_mangle)]
     extern "system" fn DllMain(inst: HINSTANCE, reason: u32, _reserved: *mut c_void) -> BOOL {
         if reason == DLL_PROCESS_ATTACH {
-            DLL_INSTANCE.set(inst.into()).ok();
+            set_dll_instance(inst.into());
         }
         BOOL(1)
     }

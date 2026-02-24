@@ -1,12 +1,8 @@
 /// グローバル定数・状態
 
 #[cfg(windows)]
-use std::sync::OnceLock;
-#[cfg(windows)]
 use std::sync::atomic::AtomicU32;
 
-#[cfg(windows)]
-use windows::Win32::Foundation::HMODULE;
 #[cfg(windows)]
 use windows::core::GUID;
 
@@ -40,9 +36,22 @@ pub const GUID_DA_FOCUSED: GUID = GUID::from_u128(0xdf83_17a7_c369_90df_e4b2_617
 
 // --- グローバル状態 ---
 
-/// DllMain で保存する DLL の HMODULE
+/// DllMain で保存する DLL の HMODULE (usize として保存、HMODULE は !Send+!Sync)
 #[cfg(windows)]
-pub static DLL_INSTANCE: OnceLock<HMODULE> = OnceLock::new();
+pub static DLL_INSTANCE_RAW: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(windows)]
+pub fn set_dll_instance(h: windows::Win32::Foundation::HMODULE) {
+    DLL_INSTANCE_RAW.store(h.0 as usize, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[cfg(windows)]
+pub fn get_dll_instance() -> windows::Win32::Foundation::HMODULE {
+    windows::Win32::Foundation::HMODULE(
+        DLL_INSTANCE_RAW.load(std::sync::atomic::Ordering::SeqCst) as *mut _
+    )
+}
 
 /// COM サーバーロックカウント (DllCanUnloadNow 用)
 #[cfg(windows)]

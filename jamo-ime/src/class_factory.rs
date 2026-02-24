@@ -4,7 +4,7 @@
 use std::ffi::c_void;
 use std::sync::atomic::Ordering;
 
-use windows::Win32::System::Com::IClassFactory;
+use windows::Win32::System::Com::*;
 use windows::core::{BOOL, GUID, IUnknown, Interface as _, Result, implement};
 
 use crate::globals::SERVER_LOCK_COUNT;

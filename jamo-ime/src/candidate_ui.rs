@@ -1,7 +1,6 @@
 /// 候補ウィンドウ (OS 標準 UI)
 ///
 /// MVP: ITfCandidateListUIElementBehavior で OS 標準の候補ウィンドウを使用。
-/// 将来的にはカスタム候補ウィンドウに置き換え可能。
 use windows::Win32::UI::TextServices::*;
 use windows::core::{BOOL, BSTR, GUID, Result, implement};
 
@@ -34,18 +33,12 @@ impl JamoCandidateListUI {
 // --- ITfUIElement ---
 
 impl ITfUIElement_Impl for JamoCandidateListUI_Impl {
-    fn GetDescription(&self, pbstrdescription: *mut BSTR) -> Result<()> {
-        unsafe {
-            *pbstrdescription = BSTR::from("Jamo 候補");
-        }
-        Ok(())
+    fn GetDescription(&self) -> Result<BSTR> {
+        Ok(BSTR::from("Jamo 候補"))
     }
 
-    fn GetGUID(&self, pguid: *mut GUID) -> Result<()> {
-        unsafe {
-            *pguid = GUID::zeroed();
-        }
-        Ok(())
+    fn GetGUID(&self) -> Result<GUID> {
+        Ok(GUID::zeroed())
     }
 
     fn Show(&self, bshow: BOOL) -> Result<()> {
@@ -53,51 +46,36 @@ impl ITfUIElement_Impl for JamoCandidateListUI_Impl {
         Ok(())
     }
 
-    fn IsShown(&self, pbshow: *mut BOOL) -> Result<()> {
-        unsafe {
-            *pbshow = BOOL(self.shown.get() as i32);
-        }
-        Ok(())
+    fn IsShown(&self) -> Result<BOOL> {
+        Ok(BOOL(self.shown.get() as i32))
     }
 }
 
 // --- ITfCandidateListUIElement ---
 
 impl ITfCandidateListUIElement_Impl for JamoCandidateListUI_Impl {
-    fn GetUpdatedFlags(&self, pdwflags: *mut u32) -> Result<()> {
-        unsafe {
-            *pdwflags = 0x01 | 0x04; // TF_CLUIE_STRING | TF_CLUIE_SELECTION
-        }
-        Ok(())
+    fn GetUpdatedFlags(&self) -> Result<u32> {
+        Ok(0x01 | 0x04) // TF_CLUIE_STRING | TF_CLUIE_SELECTION
     }
 
-    fn GetDocumentMgr(&self, _ppdim: *mut Option<ITfDocumentMgr>) -> Result<()> {
+    fn GetDocumentMgr(&self) -> Result<ITfDocumentMgr> {
         Err(windows::Win32::Foundation::E_NOTIMPL.into())
     }
 
-    fn GetCount(&self, pucount: *mut u32) -> Result<()> {
-        unsafe {
-            *pucount = self.candidates.len() as u32;
-        }
-        Ok(())
+    fn GetCount(&self) -> Result<u32> {
+        Ok(self.candidates.len() as u32)
     }
 
-    fn GetSelection(&self, puindex: *mut u32) -> Result<()> {
-        unsafe {
-            *puindex = self.selection.get();
-        }
-        Ok(())
+    fn GetSelection(&self) -> Result<u32> {
+        Ok(self.selection.get())
     }
 
-    fn GetString(&self, uindex: u32, pstr: *mut BSTR) -> Result<()> {
+    fn GetString(&self, uindex: u32) -> Result<BSTR> {
         let idx = uindex as usize;
         if idx >= self.candidates.len() {
             return Err(windows::Win32::Foundation::E_INVALIDARG.into());
         }
-        unsafe {
-            *pstr = BSTR::from(&self.candidates[idx]);
-        }
-        Ok(())
+        Ok(BSTR::from(&self.candidates[idx]))
     }
 
     fn GetPageIndex(&self, _pindex: *mut u32, _usize: u32, _pupagecnt: *mut u32) -> Result<()> {
@@ -108,7 +86,7 @@ impl ITfCandidateListUIElement_Impl for JamoCandidateListUI_Impl {
         Err(windows::Win32::Foundation::E_NOTIMPL.into())
     }
 
-    fn GetCurrentPage(&self, _pupage: *mut u32) -> Result<()> {
+    fn GetCurrentPage(&self) -> Result<u32> {
         Err(windows::Win32::Foundation::E_NOTIMPL.into())
     }
 }

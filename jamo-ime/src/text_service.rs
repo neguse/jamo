@@ -6,13 +6,12 @@ use std::sync::OnceLock;
 
 use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::UI::TextServices::*;
-use windows::core::{BOOL, GUID, IUnknown, Interface as _, Result, implement};
+use windows::core::{BOOL, GUID, Interface as _, Ref, Result, implement};
 
-use crate::composition::{Action, InputState, vk};
-use crate::display_attribute::JamoDisplayAttributeProvider;
+use crate::composition::{Action, InputState};
 use crate::edit_session;
 use crate::engine::ImeEngine;
-use crate::globals::{CLSID_JAMO_TEXT_SERVICE, GUID_PRESERVED_KEY_ONOFF};
+use crate::globals::GUID_PRESERVED_KEY_ONOFF;
 
 /// PreservedKey: 半角/全角 (VK_KANJI = 0x19)
 const TF_PRESERVED_KEY_ONOFF: TF_PRESERVEDKEY = TF_PRESERVEDKEY {
@@ -138,9 +137,8 @@ impl JamoTextService {
 // --- ITfTextInputProcessorEx ---
 
 impl ITfTextInputProcessorEx_Impl for JamoTextService_Impl {
-    fn ActivateEx(&self, ptim: Option<&ITfThreadMgr>, tid: u32, _dwflags: u32) -> Result<()> {
-        let thread_mgr = ptim.ok_or(windows::Win32::Foundation::E_INVALIDARG)?;
-        *self.thread_mgr.borrow_mut() = Some(thread_mgr.clone());
+    fn ActivateEx(&self, ptim: Ref<'_, ITfThreadMgr>, tid: u32, _dwflags: u32) -> Result<()> {
+        *self.thread_mgr.borrow_mut() = Some(ptim.clone());
         *self.client_id.borrow_mut() = tid;
 
         // 辞書ロード (バックグラウンドでもよいが、まずは同期)
@@ -148,7 +146,7 @@ impl ITfTextInputProcessorEx_Impl for JamoTextService_Impl {
 
         // キーイベント登録
         unsafe {
-            let keystroke_mgr: ITfKeystrokeMgr = thread_mgr.cast()?;
+            let keystroke_mgr: ITfKeystrokeMgr = ptim.cast()?;
             let sink: ITfKeyEventSink = self.cast()?;
             keystroke_mgr.AdviseKeyEventSink(tid, &sink, BOOL(1))?;
 
@@ -168,7 +166,7 @@ impl ITfTextInputProcessorEx_Impl for JamoTextService_Impl {
 // --- ITfTextInputProcessor ---
 
 impl ITfTextInputProcessor_Impl for JamoTextService_Impl {
-    fn Activate(&self, ptim: Option<&ITfThreadMgr>, tid: u32) -> Result<()> {
+    fn Activate(&self, ptim: Ref<'_, ITfThreadMgr>, tid: u32) -> Result<()> {
         self.ActivateEx(ptim, tid, 0)
     }
 
@@ -199,76 +197,43 @@ impl ITfKeyEventSink_Impl for JamoTextService_Impl {
 
     fn OnTestKeyDown(
         &self,
-        _pic: Option<&ITfContext>,
+        _pic: Ref<'_, ITfContext>,
         wparam: WPARAM,
         _lparam: LPARAM,
-        pfeaten: *mut BOOL,
-    ) -> Result<()> {
+    ) -> Result<BOOL> {
         let shift = unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x10) < 0 };
         let eaten = self.state.borrow().wants_key(wparam.0 as u16, shift);
-        unsafe {
-            *pfeaten = BOOL(eaten as i32);
-        }
-        Ok(())
+        Ok(BOOL(eaten as i32))
     }
 
     fn OnTestKeyUp(
         &self,
-        _pic: Option<&ITfContext>,
+        _pic: Ref<'_, ITfContext>,
         _wparam: WPARAM,
         _lparam: LPARAM,
-        pfeaten: *mut BOOL,
-    ) -> Result<()> {
-        unsafe {
-            *pfeaten = BOOL(0);
-        }
-        Ok(())
+    ) -> Result<BOOL> {
+        Ok(BOOL(0))
     }
 
-    fn OnKeyDown(
-        &self,
-        pic: Option<&ITfContext>,
-        wparam: WPARAM,
-        _lparam: LPARAM,
-        pfeaten: *mut BOOL,
-    ) -> Result<()> {
-        let context = pic.ok_or(windows::Win32::Foundation::E_INVALIDARG)?;
+    fn OnKeyDown(&self, pic: Ref<'_, ITfContext>, wparam: WPARAM, _lparam: LPARAM) -> Result<BOOL> {
         let shift = unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState(0x10) < 0 };
-        let eaten = self.process_key(context, wparam, shift)?;
-        unsafe {
-            *pfeaten = BOOL(eaten as i32);
-        }
-        Ok(())
+        let eaten = self.process_key(&pic, wparam, shift)?;
+        Ok(BOOL(eaten as i32))
     }
 
-    fn OnKeyUp(
-        &self,
-        _pic: Option<&ITfContext>,
-        _wparam: WPARAM,
-        _lparam: LPARAM,
-        pfeaten: *mut BOOL,
-    ) -> Result<()> {
-        unsafe {
-            *pfeaten = BOOL(0);
-        }
-        Ok(())
+    fn OnKeyUp(&self, _pic: Ref<'_, ITfContext>, _wparam: WPARAM, _lparam: LPARAM) -> Result<BOOL> {
+        Ok(BOOL(0))
     }
 
-    fn OnPreservedKey(
-        &self,
-        _pic: Option<&ITfContext>,
-        rguid: *const GUID,
-        pfeaten: *mut BOOL,
-    ) -> Result<()> {
+    fn OnPreservedKey(&self, _pic: Ref<'_, ITfContext>, rguid: *const GUID) -> Result<BOOL> {
         unsafe {
             if *rguid == GUID_PRESERVED_KEY_ONOFF {
                 self.state.borrow_mut().toggle_mode();
-                *pfeaten = BOOL(1);
+                Ok(BOOL(1))
             } else {
-                *pfeaten = BOOL(0);
+                Ok(BOOL(0))
             }
         }
-        Ok(())
     }
 }
 
@@ -278,7 +243,7 @@ impl ITfCompositionSink_Impl for JamoTextService_Impl {
     fn OnCompositionTerminated(
         &self,
         _ecwrite: u32,
-        _pcomposition: Option<&ITfComposition>,
+        _pcomposition: Ref<'_, ITfComposition>,
     ) -> Result<()> {
         *self.composition.borrow_mut() = None;
         *self.state.borrow_mut() = InputState::Composing {
@@ -293,10 +258,10 @@ impl ITfCompositionSink_Impl for JamoTextService_Impl {
 
 impl ITfDisplayAttributeProvider_Impl for JamoTextService_Impl {
     fn EnumDisplayAttributeInfo(&self) -> Result<IEnumTfDisplayAttributeInfo> {
-        JamoDisplayAttributeProvider::new().EnumDisplayAttributeInfo()
+        crate::display_attribute::enum_display_attribute_info()
     }
 
     fn GetDisplayAttributeInfo(&self, guid: *const GUID) -> Result<ITfDisplayAttributeInfo> {
-        JamoDisplayAttributeProvider::new().GetDisplayAttributeInfo(guid)
+        crate::display_attribute::get_display_attribute_info(guid)
     }
 }
