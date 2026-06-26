@@ -7,11 +7,21 @@ use std::sync::atomic::Ordering;
 use windows::Win32::System::Com::*;
 use windows::core::{BOOL, GUID, IUnknown, Interface as _, Ref, Result, implement};
 
-use crate::globals::{SERVER_LOCK_COUNT, com_query_interface};
+use crate::globals::{ComObjectGuard, SERVER_LOCK_COUNT, com_query_interface};
 use crate::text_service::JamoTextService;
 
 #[implement(IClassFactory)]
-pub struct JamoClassFactory;
+pub struct JamoClassFactory {
+    _lifetime: ComObjectGuard,
+}
+
+impl JamoClassFactory {
+    pub fn new() -> Self {
+        Self {
+            _lifetime: ComObjectGuard::new(),
+        }
+    }
+}
 
 impl IClassFactory_Impl for JamoClassFactory_Impl {
     fn CreateInstance(

@@ -4,6 +4,8 @@
 use windows::Win32::UI::TextServices::*;
 use windows::core::{BOOL, BSTR, GUID, Result, implement};
 
+use crate::globals::ComObjectGuard;
+
 #[implement(
     ITfCandidateListUIElementBehavior,
     ITfCandidateListUIElement,
@@ -13,6 +15,7 @@ pub struct JamoCandidateListUI {
     candidates: Vec<String>,
     selection: std::cell::Cell<u32>,
     shown: std::cell::Cell<bool>,
+    _lifetime: ComObjectGuard,
 }
 
 impl JamoCandidateListUI {
@@ -21,6 +24,7 @@ impl JamoCandidateListUI {
             candidates,
             selection: std::cell::Cell::new(selection),
             shown: std::cell::Cell::new(false),
+            _lifetime: ComObjectGuard::new(),
         }
     }
 
@@ -55,7 +59,7 @@ impl ITfUIElement_Impl for JamoCandidateListUI_Impl {
 
 impl ITfCandidateListUIElement_Impl for JamoCandidateListUI_Impl {
     fn GetUpdatedFlags(&self) -> Result<u32> {
-        Ok(0x01 | 0x04) // TF_CLUIE_STRING | TF_CLUIE_SELECTION
+        Ok(TF_CLUIE_STRING | TF_CLUIE_SELECTION)
     }
 
     fn GetDocumentMgr(&self) -> Result<ITfDocumentMgr> {

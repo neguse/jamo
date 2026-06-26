@@ -30,7 +30,8 @@ mod dll {
 
     use crate::class_factory::JamoClassFactory;
     use crate::globals::{
-        CLSID_JAMO_TEXT_SERVICE, SERVER_LOCK_COUNT, com_query_interface, set_dll_instance,
+        ACTIVE_OBJECT_COUNT, CLSID_JAMO_TEXT_SERVICE, SERVER_LOCK_COUNT, com_query_interface,
+        set_dll_instance,
     };
 
     /// DLL エントリポイント
@@ -62,7 +63,7 @@ mod dll {
                 return windows::Win32::Foundation::CLASS_E_CLASSNOTAVAILABLE;
             }
 
-            let factory: IClassFactory = JamoClassFactory.into();
+            let factory: IClassFactory = JamoClassFactory::new().into();
             com_query_interface(factory.as_raw(), riid, ppv)
                 .ok()
                 .map_or_else(|e| e.code(), |()| S_OK)
@@ -73,6 +74,9 @@ mod dll {
     #[unsafe(no_mangle)]
     extern "system" fn DllCanUnloadNow() -> HRESULT {
         if SERVER_LOCK_COUNT.load(Ordering::SeqCst) == 0 {
+            if ACTIVE_OBJECT_COUNT.load(Ordering::SeqCst) != 0 {
+                return S_FALSE;
+            }
             S_OK
         } else {
             S_FALSE

@@ -47,6 +47,26 @@ fn http_get(url: &str) -> String {
     String::from_utf8(output.stdout).expect("invalid utf8")
 }
 
+fn http_status(method: &str, url: &str) -> u16 {
+    let output = Command::new("curl")
+        .args([
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            "-X",
+            method,
+            url,
+        ])
+        .output()
+        .expect("curl failed");
+    String::from_utf8(output.stdout)
+        .expect("invalid utf8")
+        .parse()
+        .expect("invalid status")
+}
+
 #[test]
 fn test_health() {
     if !ipadic_available() {
@@ -70,6 +90,14 @@ fn test_convert_api() {
     let json: serde_json::Value = serde_json::from_str(&body).expect("invalid json");
     let result = json["result"].as_array().expect("result should be array");
     assert!(!result.is_empty(), "result should not be empty");
+    let boundaries = json["boundaries"]
+        .as_array()
+        .expect("boundaries should be array");
+    assert!(!boundaries.is_empty(), "boundaries should not be empty");
+    assert!(
+        boundaries.iter().all(|b| b.as_u64().is_some()),
+        "boundaries should be numeric: {boundaries:?}"
+    );
 
     // セグメントの candidates を全部つなげると「私は学生です」になるはず
     let text: String = result
@@ -77,4 +105,44 @@ fn test_convert_api() {
         .map(|seg| seg["candidates"][0].as_str().unwrap_or(""))
         .collect();
     assert_eq!(text, "私は学生です");
+}
+
+#[test]
+fn test_predict_api() {
+    if !ipadic_available() {
+        return;
+    }
+    let _server = start_server(18093);
+    let body = http_get("http://127.0.0.1:18093/predict?q=%E3%81%8D%E3%82%87%E3%81%86");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("invalid json");
+    let candidates = json["candidates"]
+        .as_array()
+        .expect("candidates should be array");
+    assert!(!candidates.is_empty(), "candidates should not be empty");
+}
+
+#[test]
+fn test_resize_rejects_invalid_boundary() {
+    if !ipadic_available() {
+        return;
+    }
+    let _server = start_server(18094);
+    let status = http_status(
+        "GET",
+        "http://127.0.0.1:18094/resize?q=%E3%81%8D%E3%82%87%E3%81%86%E3%81%AF&boundaries=1,12&clause=0&delta=1",
+    );
+    assert_eq!(status, 400);
+}
+
+#[test]
+fn test_wrong_method_is_405() {
+    if !ipadic_available() {
+        return;
+    }
+    let _server = start_server(18095);
+    let status = http_status(
+        "POST",
+        "http://127.0.0.1:18095/convert?q=%E3%81%8D%E3%82%87%E3%81%86",
+    );
+    assert_eq!(status, 405);
 }

@@ -23,9 +23,13 @@ fn process_request(request: &IpcRequest, dict: &IpaDict) -> IpcResponse {
             n,
         } => match jamo_core::resize_boundaries(input, boundaries, *clause, *delta) {
             Some(new_boundaries) => {
-                let result =
-                    jamo_core::convert_with_boundaries(input, &new_boundaries, dict, dict, *n);
-                IpcResponse::Convert { result }
+                match jamo_core::try_convert_with_boundaries(input, &new_boundaries, dict, dict, *n)
+                {
+                    Ok(result) => IpcResponse::Convert { result },
+                    Err(e) => IpcResponse::Error {
+                        message: e.to_string(),
+                    },
+                }
             }
             None => IpcResponse::Error {
                 message: "invalid resize operation".to_string(),

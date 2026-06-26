@@ -124,6 +124,14 @@ impl IpaDict {
 
 const MAGIC: &[u8; 4] = b"JAMO";
 const VERSION: u32 = 2;
+const MAX_BITS: usize = 100_000_000;
+const MAX_LOUDS_NODES: usize = 10_000_000;
+const MAX_ENTRIES: usize = 5_000_000;
+const MAX_POS: usize = 8192;
+
+fn invalid_data(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message.into())
+}
 
 fn write_u32(w: &mut impl Write, v: u32) -> io::Result<()> {
     w.write_all(&v.to_le_bytes())
@@ -242,6 +250,15 @@ fn read_binary(r: &mut impl Read) -> io::Result<IpaDict> {
     // BitVec
     let bits_len = read_u32(r)? as usize;
     let num_blocks = read_u32(r)? as usize;
+    if bits_len > MAX_BITS {
+        return Err(invalid_data(format!("bits too large: {bits_len}")));
+    }
+    let expected_blocks = bits_len.div_ceil(64);
+    if num_blocks != expected_blocks {
+        return Err(invalid_data(format!(
+            "invalid bit block count: expected {expected_blocks}, got {num_blocks}"
+        )));
+    }
     let mut blocks = vec![0u64; num_blocks];
     for block in &mut blocks {
         let mut buf = [0u8; 8];
@@ -252,11 +269,21 @@ fn read_binary(r: &mut impl Read) -> io::Result<IpaDict> {
 
     // Labels
     let labels_count = read_u32(r)? as usize;
+    if labels_count == 0 || labels_count > MAX_LOUDS_NODES {
+        return Err(invalid_data(format!(
+            "invalid labels count: {labels_count}"
+        )));
+    }
     let mut labels = vec![0u8; labels_count];
     r.read_exact(&mut labels)?;
 
     // Terminal
     let terminal_count = read_u32(r)? as usize;
+    if terminal_count != labels_count {
+        return Err(invalid_data(format!(
+            "terminal count must match labels count: labels={labels_count}, terminal={terminal_count}"
+        )));
+    }
     let mut terminal = Vec::with_capacity(terminal_count);
     for _ in 0..terminal_count {
         let start = read_u32(r)?;
@@ -270,6 +297,9 @@ fn read_binary(r: &mut impl Read) -> io::Result<IpaDict> {
 
     // Entries
     let entries_count = read_u32(r)? as usize;
+    if entries_count > MAX_ENTRIES {
+        return Err(invalid_data(format!("entries too large: {entries_count}")));
+    }
     let mut entries = Vec::with_capacity(entries_count);
     for _ in 0..entries_count {
         let surface_len = read_u16(r)? as usize;
@@ -292,11 +322,17 @@ fn read_binary(r: &mut impl Read) -> io::Result<IpaDict> {
         });
     }
 
+    validate_louds_parts(&bits, &labels, &terminal, entries.len())?;
     let trie = LoudsTrie::from_parts(bits, labels, terminal, entries);
 
     // Matrix
     let num_pos = read_u32(r)? as usize;
-    let matrix_size = num_pos * num_pos;
+    if num_pos == 0 || num_pos > MAX_POS {
+        return Err(invalid_data(format!("invalid num_pos: {num_pos}")));
+    }
+    let matrix_size = num_pos
+        .checked_mul(num_pos)
+        .ok_or_else(|| invalid_data(format!("matrix size overflow: {num_pos}")))?;
     let mut matrix = vec![0i16; matrix_size];
     for cost in &mut matrix {
         *cost = read_i16(r)?;
@@ -313,6 +349,49 @@ fn read_binary(r: &mut impl Read) -> io::Result<IpaDict> {
         vocab_size,
         reading_count,
     })
+}
+
+fn validate_louds_parts(
+    bits: &BitVec,
+    labels: &[u8],
+    terminal: &[Option<(u32, u32)>],
+    entries_len: usize,
+) -> io::Result<()> {
+    if labels.len() != terminal.len() {
+        return Err(invalid_data("labels/terminal length mismatch"));
+    }
+    if labels.len() < 2 {
+        return Err(invalid_data("LOUDS must contain super-root and root"));
+    }
+
+    let ones = bits.rank1(bits.len());
+    let zeros = bits.rank0(bits.len());
+    if ones + 1 != labels.len() {
+        return Err(invalid_data(format!(
+            "LOUDS one-bit/node mismatch: ones={ones}, labels={}",
+            labels.len()
+        )));
+    }
+    if zeros != labels.len() {
+        return Err(invalid_data(format!(
+            "LOUDS zero-bit/node mismatch: zeros={zeros}, labels={}",
+            labels.len()
+        )));
+    }
+
+    for (i, range) in terminal.iter().enumerate() {
+        if let Some((start, end)) = range {
+            let start = *start as usize;
+            let end = *end as usize;
+            if start > end || end > entries_len {
+                return Err(invalid_data(format!(
+                    "terminal range out of entries at node {i}: {start}..{end}, entries={entries_len}"
+                )));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 impl ConnectionCost for IpaDict {
@@ -492,300 +571,4 @@ fn parse_matrix(content: &str) -> Result<(usize, Vec<i16>), String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_katakana_to_hiragana() {
-        assert_eq!(katakana_to_hiragana("キョウ"), "きょう");
-        assert_eq!(katakana_to_hiragana("テンキ"), "てんき");
-        assert_eq!(katakana_to_hiragana("ハ"), "は");
-    }
-
-    #[test]
-    fn test_parse_csv_line() {
-        let line = "今日,1285,1285,5543,名詞,一般,*,*,*,*,今日,キョウ,キョー";
-        let entry = parse_csv_line(line).unwrap();
-        assert_eq!(entry.surface, "今日");
-        assert_eq!(entry.left_id, 1285);
-        assert_eq!(entry.right_id, 1285);
-        assert_eq!(entry.cost, 5543);
-        assert_eq!(entry.reading, "キョウ");
-    }
-
-    #[test]
-    fn test_parse_matrix() {
-        let content = "3 3\n0 0 -100\n0 1 200\n1 0 -50\n2 2 300\n";
-        let (n, matrix) = parse_matrix(content).unwrap();
-        assert_eq!(n, 3);
-        assert_eq!(matrix[0 * 3 + 0], -100);
-        assert_eq!(matrix[0 * 3 + 1], 200);
-        assert_eq!(matrix[1 * 3 + 0], -50);
-        assert_eq!(matrix[2 * 3 + 2], 300);
-    }
-
-    #[test]
-    fn test_convert_with_ipadic() {
-        let ipadic_dir = Path::new("../data/ipadic");
-        if !ipadic_dir.exists() {
-            eprintln!("Skipping: IPAdic not found");
-            return;
-        }
-
-        let dict = IpaDict::load(ipadic_dir).expect("failed to load IPAdic");
-        let result = crate::convert_with_conn("きょうはいいてんきですね", &dict, &dict);
-
-        let text: String = result.segments.iter().map(|s| s.surface.as_str()).collect();
-        eprintln!("変換結果: {text}");
-
-        // 最低限、入力全体をカバーしているはず
-        let yomi: String = result.segments.iter().map(|s| s.yomi.as_str()).collect();
-        assert_eq!(yomi, "きょうはいいてんきですね");
-
-        // 接続コスト付きで「天気」が出るようになった (Iter 1 では「天木」だった)
-        assert!(text.contains("天気"), "「天気」が含まれるはず: {text}");
-    }
-
-    #[test]
-    fn test_load_ipadic() {
-        let ipadic_dir = Path::new("../data/ipadic");
-        if !ipadic_dir.exists() {
-            eprintln!("Skipping: IPAdic not found at {}", ipadic_dir.display());
-            return;
-        }
-
-        let dict = IpaDict::load(ipadic_dir).expect("failed to load IPAdic");
-        eprintln!(
-            "Loaded {} vocab, {} readings, {} pos",
-            dict.vocab_size(),
-            dict.reading_count(),
-            dict.pos_size()
-        );
-
-        assert!(
-            dict.vocab_size() > 300_000,
-            "IPAdic should have >300k entries"
-        );
-        assert!(dict.pos_size() > 1000, "IPAdic should have >1000 POS IDs");
-
-        // 「きょう」で引けるはず
-        let results = dict.common_prefix_search("きょう");
-        assert!(!results.is_empty(), "「きょう」がヒットするはず");
-
-        let surfaces: Vec<&str> = results
-            .iter()
-            .flat_map(|(_, entries)| entries.iter().map(|e| e.surface.as_str()))
-            .collect();
-        assert!(
-            surfaces.contains(&"今日"),
-            "「今日」が候補にあるはず: {:?}",
-            surfaces
-        );
-    }
-
-    #[test]
-    fn test_clauses_with_ipadic() {
-        let ipadic_dir = Path::new("../data/ipadic");
-        if !ipadic_dir.exists() {
-            eprintln!("Skipping: IPAdic not found");
-            return;
-        }
-
-        let dict = IpaDict::load(ipadic_dir).expect("failed to load IPAdic");
-        let result = crate::convert_nbest("わたしはがくせいです", &dict, &dict, 5);
-
-        let clause_surfaces: Vec<&str> =
-            result.clauses.iter().map(|c| c.surface.as_str()).collect();
-        let clause_yomis: Vec<&str> = result.clauses.iter().map(|c| c.yomi.as_str()).collect();
-        eprintln!("文節: {clause_surfaces:?}");
-        eprintln!("読み: {clause_yomis:?}");
-
-        // 読みが入力全体をカバー
-        let all_yomi: String = result.clauses.iter().map(|c| c.yomi.as_str()).collect();
-        assert_eq!(all_yomi, "わたしはがくせいです");
-
-        // 文節数は単語数より少ないはず (助詞・助動詞がまとまる)
-        assert!(
-            result.clauses.len() < result.segments.len(),
-            "文節数 ({}) < 単語数 ({}) のはず",
-            result.clauses.len(),
-            result.segments.len()
-        );
-    }
-
-    #[test]
-    fn test_classify_pos() {
-        use crate::dict::{POS_CONTENT, POS_FUNCTION};
-        assert_eq!(classify_pos("名詞", "一般"), POS_CONTENT);
-        assert_eq!(classify_pos("名詞", "接尾"), POS_FUNCTION);
-        assert_eq!(classify_pos("名詞", "非自立"), POS_FUNCTION);
-        assert_eq!(classify_pos("動詞", "自立"), POS_CONTENT);
-        assert_eq!(classify_pos("動詞", "非自立"), POS_FUNCTION);
-        assert_eq!(classify_pos("動詞", "接尾"), POS_FUNCTION);
-        assert_eq!(classify_pos("形容詞", "自立"), POS_CONTENT);
-        assert_eq!(classify_pos("形容詞", "非自立"), POS_FUNCTION);
-        assert_eq!(classify_pos("助詞", "格助詞"), POS_FUNCTION);
-        assert_eq!(classify_pos("助動詞", "*"), POS_FUNCTION);
-        assert_eq!(classify_pos("副詞", "一般"), POS_CONTENT);
-        assert_eq!(classify_pos("接続詞", "*"), POS_CONTENT);
-        assert_eq!(classify_pos("接頭詞", "名詞接続"), POS_CONTENT);
-    }
-
-    #[test]
-    fn test_load_merge() {
-        let ipadic_dir = Path::new("../data/ipadic");
-        if !ipadic_dir.exists() {
-            eprintln!("Skipping: IPAdic not found");
-            return;
-        }
-
-        // ベースの辞書をロード
-        let base = IpaDict::load(ipadic_dir).expect("failed to load base");
-        let base_vocab = base.vocab_size();
-
-        // 追加CSVを一時ファイルに書き出し
-        let tmp_dir = std::env::temp_dir().join("jamo_merge_test");
-        let _ = std::fs::create_dir_all(&tmp_dir);
-        let extra_csv = tmp_dir.join("extra.csv");
-        std::fs::write(
-            &extra_csv,
-            // NEologd風のエントリ (IPAdicと同じCSV形式)
-            "スマートフォン,1285,1285,3000,名詞,一般,*,*,*,*,スマートフォン,スマートフォン,スマートフォン\n\
-             クラウドファンディング,1285,1285,4000,名詞,一般,*,*,*,*,クラウドファンディング,クラウドファンディング,クラウドファンディング\n",
-        )
-        .unwrap();
-
-        // マージしてロード
-        let merged =
-            IpaDict::load_merge(ipadic_dir, &[extra_csv.as_path()]).expect("failed to merge");
-
-        // 追加エントリ分だけ語彙が増えている
-        assert!(
-            merged.vocab_size() > base_vocab,
-            "merged {} should be > base {}",
-            merged.vocab_size(),
-            base_vocab
-        );
-
-        // 追加したエントリが検索可能
-        let results = merged.common_prefix_search("すまーとふぉん");
-        let surfaces: Vec<&str> = results
-            .iter()
-            .flat_map(|(_, entries)| entries.iter().map(|e| e.surface.as_str()))
-            .collect();
-        assert!(
-            surfaces.contains(&"スマートフォン"),
-            "「スマートフォン」が候補にあるはず: {:?}",
-            surfaces
-        );
-
-        // ベースのエントリも引き続き検索可能
-        let results = merged.common_prefix_search("きょう");
-        let surfaces: Vec<&str> = results
-            .iter()
-            .flat_map(|(_, entries)| entries.iter().map(|e| e.surface.as_str()))
-            .collect();
-        assert!(
-            surfaces.contains(&"今日"),
-            "「今日」がベースから引き続きあるはず: {:?}",
-            surfaces
-        );
-
-        // 接続コスト行列はベースと同一
-        assert_eq!(merged.pos_size(), base.pos_size());
-        assert_eq!(merged.connection_cost(0, 0), base.connection_cost(0, 0));
-
-        // クリーンアップ
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-    }
-
-    #[test]
-    fn test_load_merge_directory() {
-        let ipadic_dir = Path::new("../data/ipadic");
-        if !ipadic_dir.exists() {
-            eprintln!("Skipping: IPAdic not found");
-            return;
-        }
-
-        // 追加CSVディレクトリを作成
-        let tmp_dir = std::env::temp_dir().join("jamo_merge_dir_test");
-        let _ = std::fs::create_dir_all(&tmp_dir);
-        std::fs::write(
-            tmp_dir.join("neologd.csv"),
-            "ブロックチェーン,1285,1285,3500,名詞,一般,*,*,*,*,ブロックチェーン,ブロックチェーン,ブロックチェーン\n",
-        )
-        .unwrap();
-
-        // ディレクトリごとマージ
-        let merged =
-            IpaDict::load_merge(ipadic_dir, &[tmp_dir.as_path()]).expect("failed to merge dir");
-
-        let results = merged.common_prefix_search("ぶろっくちぇーん");
-        let surfaces: Vec<&str> = results
-            .iter()
-            .flat_map(|(_, entries)| entries.iter().map(|e| e.surface.as_str()))
-            .collect();
-        assert!(
-            surfaces.contains(&"ブロックチェーン"),
-            "ディレクトリからのマージで候補にあるはず: {:?}",
-            surfaces
-        );
-
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-    }
-
-    #[test]
-    fn test_binary_roundtrip() {
-        let ipadic_dir = Path::new("../data/ipadic");
-        if !ipadic_dir.exists() {
-            eprintln!("Skipping: IPAdic not found");
-            return;
-        }
-
-        let dict = IpaDict::load(ipadic_dir).expect("failed to load IPAdic");
-
-        // バイナリに書き出し
-        let tmp = std::env::temp_dir().join("jamo_test_dict.bin");
-        dict.save_binary(&tmp).expect("failed to save binary");
-
-        let file_size = fs::metadata(&tmp).unwrap().len();
-        eprintln!(
-            "Binary dict size: {} bytes ({:.1} MB)",
-            file_size,
-            file_size as f64 / 1_048_576.0
-        );
-
-        // バイナリから読み込み
-        let dict2 = IpaDict::load_binary(&tmp).expect("failed to load binary");
-
-        // 統計が一致
-        assert_eq!(dict.vocab_size(), dict2.vocab_size());
-        assert_eq!(dict.reading_count(), dict2.reading_count());
-        assert_eq!(dict.pos_size(), dict2.pos_size());
-
-        // 変換結果が一致
-        let result1 = crate::convert_with_conn("わたしはがくせいです", &dict, &dict);
-        let result2 = crate::convert_with_conn("わたしはがくせいです", &dict2, &dict2);
-        let text1: String = result1
-            .segments
-            .iter()
-            .map(|s| s.surface.as_str())
-            .collect();
-        let text2: String = result2
-            .segments
-            .iter()
-            .map(|s| s.surface.as_str())
-            .collect();
-        assert_eq!(text1, text2);
-
-        // 接続コストが一致
-        assert_eq!(dict.connection_cost(0, 0), dict2.connection_cost(0, 0));
-        assert_eq!(
-            dict.connection_cost(100, 200),
-            dict2.connection_cost(100, 200)
-        );
-
-        // クリーンアップ
-        let _ = fs::remove_file(&tmp);
-    }
-}
+mod tests;

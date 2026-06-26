@@ -62,6 +62,28 @@ pub fn get_dll_instance() -> windows::Win32::Foundation::HMODULE {
 #[cfg(windows)]
 pub static SERVER_LOCK_COUNT: AtomicU32 = AtomicU32::new(0);
 
+/// DLL 内の生存 COM オブジェクト数 (DllCanUnloadNow 用)
+#[cfg(windows)]
+pub static ACTIVE_OBJECT_COUNT: AtomicU32 = AtomicU32::new(0);
+
+#[cfg(windows)]
+pub struct ComObjectGuard;
+
+#[cfg(windows)]
+impl ComObjectGuard {
+    pub fn new() -> Self {
+        ACTIVE_OBJECT_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Self
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ComObjectGuard {
+    fn drop(&mut self) {
+        ACTIVE_OBJECT_COUNT.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 /// COM QueryInterface (vtable 直接呼び出し)
 ///
 /// windows-rs 0.62 では IUnknown に query/QueryInterface メソッドがないため、

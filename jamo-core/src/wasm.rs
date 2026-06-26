@@ -34,13 +34,7 @@ impl JamoEngine {
             })
             .collect();
 
-        // 文節境界も返す
-        let mut boundaries = Vec::new();
-        let mut pos = 0;
-        for c in &result.clauses {
-            pos += c.yomi.len();
-            boundaries.push(pos);
-        }
+        let boundaries = crate::clause_boundaries(&result.clauses);
 
         serde_json::json!({
             "result": clauses,
@@ -83,7 +77,8 @@ impl JamoEngine {
             .ok_or_else(|| JsError::new("invalid resize operation"))?;
 
         let result =
-            crate::convert_with_boundaries(input, &new_boundaries, &self.dict, &self.dict, n);
+            crate::try_convert_with_boundaries(input, &new_boundaries, &self.dict, &self.dict, n)
+                .map_err(|e| JsError::new(&e.to_string()))?;
 
         let clauses: Vec<serde_json::Value> = result
             .clauses

@@ -1,4 +1,6 @@
-use crate::dict::Dictionary;
+use crate::dict::{Dictionary, POS_CONTENT};
+
+const UNKNOWN_WORD_COST: i64 = 30_000;
 
 /// ラティスノード
 #[derive(Debug, Clone)]
@@ -14,11 +16,11 @@ pub struct Node {
     /// 右文脈品詞ID
     pub right_id: u16,
     /// 単語コスト
-    pub word_cost: i32,
+    pub word_cost: i64,
     /// 品詞タイプ (POS_CONTENT or POS_FUNCTION)
     pub pos_type: u8,
     /// Viterbi累積コスト (デコード時に設定)
-    pub total_cost: i32,
+    pub total_cost: i64,
     /// 最適前ノードのインデックス (デコード時に設定)
     pub prev: Option<usize>,
 }
@@ -55,8 +57,9 @@ impl Lattice {
         });
         ends_at[0].push(bos_idx);
 
-        // 各文字位置から辞書引き
-        for (char_start, _) in input.char_indices() {
+        // 各文字位置から辞書引き。未知語でも入力を落とさないため、1文字未知語ノードも入れる。
+        let char_positions: Vec<(usize, char)> = input.char_indices().collect();
+        for (i, &(char_start, ch)) in char_positions.iter().enumerate() {
             let remaining = &input[char_start..];
             let results = dict.common_prefix_search(remaining);
             for (match_len, entries) in results {
@@ -69,14 +72,32 @@ impl Lattice {
                         surface: entry.surface.clone(),
                         left_id: entry.left_id,
                         right_id: entry.right_id,
-                        word_cost: entry.cost as i32,
+                        word_cost: entry.cost as i64,
                         pos_type: entry.pos_type,
-                        total_cost: i32::MAX,
+                        total_cost: i64::MAX,
                         prev: None,
                     });
                     ends_at[byte_end].push(idx);
                 }
             }
+
+            let byte_end = char_positions
+                .get(i + 1)
+                .map(|(pos, _)| *pos)
+                .unwrap_or(input_len);
+            let idx = nodes.len();
+            nodes.push(Node {
+                start: char_start,
+                end: byte_end,
+                surface: ch.to_string(),
+                left_id: 0,
+                right_id: 0,
+                word_cost: UNKNOWN_WORD_COST,
+                pos_type: POS_CONTENT,
+                total_cost: i64::MAX,
+                prev: None,
+            });
+            ends_at[byte_end].push(idx);
         }
 
         // EOS (文末) ノード: 入力末尾で開始・終了する特殊ノード
@@ -89,7 +110,7 @@ impl Lattice {
             right_id: 0,
             word_cost: 0,
             pos_type: 0,
-            total_cost: i32::MAX,
+            total_cost: i64::MAX,
             prev: None,
         });
         ends_at[input_len].push(eos_idx);
@@ -174,5 +195,22 @@ mod tests {
         let eos = &lattice.nodes[lattice.eos_index()];
         assert_eq!(eos.start, 9); // "きょう" = 9 bytes
         assert_eq!(eos.end, 9);
+    }
+
+    #[test]
+    fn test_lattice_adds_unknown_nodes() {
+        let dict = HashMapDict::test_dict();
+        let lattice = Lattice::build("ぴゃ", &dict);
+
+        let at_3: Vec<&str> = lattice.ends_at[3]
+            .iter()
+            .map(|&i| lattice.nodes[i].surface.as_str())
+            .collect();
+        let at_6: Vec<&str> = lattice.ends_at[6]
+            .iter()
+            .map(|&i| lattice.nodes[i].surface.as_str())
+            .collect();
+        assert!(at_3.contains(&"ぴ"));
+        assert!(at_6.contains(&"ゃ"));
     }
 }

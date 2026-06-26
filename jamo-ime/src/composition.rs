@@ -16,6 +16,8 @@ pub enum Action {
     StartConversion(String),
     /// 変換結果の表示更新
     UpdateConversion,
+    /// 文節伸縮要求
+    ResizeClause(i32),
     /// 変換を取り消して Composing に戻る
     CancelConversion(String),
     /// Direct ↔ Composing モード切替
@@ -240,12 +242,11 @@ impl InputState {
             }
             vk::RIGHT if shift => {
                 // 文節伸ばす (Shift+→)
-                // 実際の resize は呼び出し側で行う
-                Action::UpdateConversion
+                Action::ResizeClause(1)
             }
             vk::LEFT if shift => {
                 // 文節縮める (Shift+←)
-                Action::UpdateConversion
+                Action::ResizeClause(-1)
             }
             vk::RIGHT => {
                 // 次の文節
@@ -328,6 +329,34 @@ impl InputState {
             candidate_indices: vec![0; num_clauses],
             boundaries,
         };
+    }
+
+    pub fn resize_request(&self, delta: i32) -> Option<(String, Vec<usize>, usize, i32)> {
+        match self {
+            InputState::Converting {
+                input,
+                focused_clause,
+                boundaries,
+                ..
+            } => Some((input.clone(), boundaries.clone(), *focused_clause, delta)),
+            _ => None,
+        }
+    }
+
+    pub fn apply_resize_result(&mut self, result: ConvertResult) {
+        if let InputState::Converting {
+            input,
+            focused_clause,
+            ..
+        } = self
+        {
+            let input = input.clone();
+            let new_focus = (*focused_clause).min(result.clauses.len().saturating_sub(1));
+            self.set_conversion_result(input, result);
+            if let InputState::Converting { focused_clause, .. } = self {
+                *focused_clause = new_focus;
+            }
+        }
     }
 
     /// Composing 状態に戻す (変換取り消し時)
@@ -600,5 +629,65 @@ mod tests {
         if let InputState::Converting { focused_clause, .. } = &state {
             assert_eq!(*focused_clause, 0);
         }
+    }
+
+    #[test]
+    fn test_converting_shift_arrows_request_resize() {
+        use jamo_core::viterbi::{Clause, ConvertResult};
+
+        let result = ConvertResult {
+            segments: vec![],
+            clauses: vec![
+                Clause {
+                    surface: "今日".to_string(),
+                    yomi: "きょう".to_string(),
+                    candidates: vec!["今日".to_string()],
+                },
+                Clause {
+                    surface: "は".to_string(),
+                    yomi: "は".to_string(),
+                    candidates: vec!["は".to_string()],
+                },
+            ],
+        };
+        let mut state = InputState::Direct;
+        state.set_conversion_result("きょうは".to_string(), result);
+
+        assert_eq!(
+            state.handle_key(vk::RIGHT, None, true),
+            Action::ResizeClause(1)
+        );
+        assert_eq!(
+            state.handle_key(vk::LEFT, None, true),
+            Action::ResizeClause(-1)
+        );
+    }
+
+    #[test]
+    fn test_resize_request_contains_current_boundaries() {
+        use jamo_core::viterbi::{Clause, ConvertResult};
+
+        let result = ConvertResult {
+            segments: vec![],
+            clauses: vec![
+                Clause {
+                    surface: "今日".to_string(),
+                    yomi: "きょう".to_string(),
+                    candidates: vec!["今日".to_string()],
+                },
+                Clause {
+                    surface: "は".to_string(),
+                    yomi: "は".to_string(),
+                    candidates: vec!["は".to_string()],
+                },
+            ],
+        };
+        let mut state = InputState::Direct;
+        state.set_conversion_result("きょうは".to_string(), result);
+
+        assert_eq!(
+            state.resize_request(1),
+            Some(("きょうは".to_string(), vec![9, 12], 0, 1))
+        );
     }
 }

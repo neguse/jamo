@@ -33,6 +33,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: build jamo-ime
         run: cargo build --release -p jamo-ime
+      - name: smoke jamo-ime
+        shell: pwsh
+        run: ./scripts/ime-smoke.ps1 -Register
       - name: test jamo-core
         run: cargo test -p jamo-core
       - name: test jamo-ime

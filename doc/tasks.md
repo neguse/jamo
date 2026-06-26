@@ -219,6 +219,60 @@ T090, T091 は独立 (どちらか片方だけでもよい)
 
 ---
 
+## Iter 7: コードレビュー是正
+
+完了条件: 2026-06-26 の分散コードレビューで見つかった High/Medium 指摘を潰し、再発防止テストを追加する
+
+### 実装決定
+
+- T100: 未知語はエラーにしない。ラティス構築時に全文字位置へ「1文字未知語ノード」を追加する。surface/yomi は入力1文字、left_id/right_id は 0、pos_type は POS_CONTENT、word_cost は既知語より十分悪い固定値にする。辞書一致がある区間では既知語が優先され、未知語だけの入力も元文字列を保持して返ること。
+- T101: `boundaries` は byte offset のまま維持する。ただし core に共通 validator を置き、昇順、重複なし、全値が `input` の UTF-8 文字境界、範囲内、最後が `input.len()` を満たさない場合は slice しない。HTTP は 400、IPC は `IpcResponse::Error`、WASM は `JsError`。
+- T102: 既存の `/convert` レスポンス互換性は壊さず、トップレベルに `boundaries: number[]` を追加する。`/resize` も `boundaries` を文字列配列ではなく `number[]` で返す。OpenAPI と README の例を同時に更新する。
+- T104: `.dict` は読み込み時に `InvalidData` で落とす。最低限、`bits_len <= blocks.len() * 64`、`labels.len() == terminal.len()`、LOUDS の node 数整合、terminal range が `entries` 範囲内、`num_pos.checked_mul(num_pos)` 成功、`num_pos <= 8192` を検証する。
+- T105: Viterbi の累積コストは `i64` に寄せる。公開 result の候補順だけを維持し、辞書エントリの on-disk cost 型は変えない。
+- T110: Worker 認証は HMAC JWT に決める。`JWT_SECRET` で HS256 を検証し、`sub` を Durable Object name に使う。`?user=` は `ALLOW_DEV_USER=true` のときだけ許可し、OpenAPI では開発用として明記する。
+- T114: CORS は default deny。`ALLOWED_ORIGINS` に完全一致した Origin だけ `Access-Control-Allow-Origin` を返し、OPTIONS は許可 Origin なら 204、不許可なら 403。
+- T120: TSF composition は `Rc<RefCell<Option<ITfComposition>>>` で共有し、edit session が service 本体と同じ cell を更新する。`RefCell` 自体の clone は禁止。
+- T121: `EndComposition` は空文字でも必ず `SetText` してから `EndComposition` する。Escape は空文字で cancel、IME off/Deactivate は現在の表示文字列を commit する。
+- T122: COM lifetime は DLL 内の全 COM object に guard を持たせ、生成時に active count increment、Drop で decrement する。`DllCanUnloadNow` は lock count と active count の両方が 0 のときだけ `S_OK`。
+- T126: Windows CI では build/test に加えて `scripts/ime-smoke.ps1` を追加し、DLL export、`regsvr32 /s` 登録/解除、`jamo serve --ime` 起動確認まで自動化する。メモ帳での手動入力確認は checklist として残す。
+
+### Core / CLI
+
+| # | タスク | 成果物 |
+|---|--------|--------|
+| T100 | 未知語フォールバック | 1文字未知語ノードで辞書未登録入力を保持する。テスト: 未知語のみ/既知語混在 |
+| T101 | resize 境界検証 | `boundaries` の昇順・範囲内・UTF-8境界・末尾 `input.len()` を検証し、HTTP/IPC/WASMで 400/Error にする |
+| T102 | resize API round-trip | `/convert` が文節境界を返し、`/resize` の `boundaries` は数値配列で返す。OpenAPI と実装を一致 |
+| T103 | CLI HTTP API 補完 | `/predict` 実装、HTTP method 検証、malformed JSON/parameter を 4xx にする |
+| T104 | 辞書バイナリ堅牢化 | `.dict` の LOUDS/terminal/entry/matrix 整合性検証、巨大 allocation/overflow 防止、破損辞書テスト |
+| T105 | Viterbi コスト overflow 対策 | 累積コストを `i64` に変更し、長文・極端コストの回帰テスト |
+
+### Cloudflare Worker
+
+| # | タスク | 成果物 |
+|---|--------|--------|
+| T110 | Worker 認証 | HS256 JWT を `JWT_SECRET` で検証し、`sub` を user_id にする。dev query auth は明示フラグ時のみ |
+| T111 | Worker deploy 手順修正 | `build-wasm` を deploy 前提に組み込み、README の R2 upload bucket/path を `jamo-dicts` と実作業ディレクトリに合わせる |
+| T112 | Worker 辞書ロード retry | R2 miss/一時失敗で rejected promise を永続キャッシュしない。再試行・エラー分類テスト |
+| T113 | WebSocket state 操作分離 | `commit`/`dict.*`/`dict.list` は wasm 辞書ロードなしで動くようにする |
+| T114 | Worker API 契約整合 | method 検証、default deny CORS、許可 Origin の OPTIONS 204 を実装し、OpenAPI と一致 |
+| T115 | `/dict/import` 件数修正 | `INSERT OR IGNORE` の実挿入件数だけ `added` に数える |
+
+### Windows IME
+
+| # | タスク | 成果物 |
+|---|--------|--------|
+| T120 | TSF composition 保持修正 | `Rc<RefCell<Option<ITfComposition>>>` で service/edit session が同じ cell を共有 |
+| T121 | 空文字 EndComposition 修正 | 空文字でも `SetText` して終了。Escape は cancel、IME off/Deactivate は表示文字列を commit |
+| T122 | COM lifetime 管理 | active object 参照を `DllCanUnloadNow` に反映し、参照中 DLL unload を防ぐ |
+| T123 | モード切替/Deactivate cleanup | composition 中の IME off/Deactivate で現在の表示文字列を commit して active composition を終了 |
+| T124 | 文節伸縮の実配線 | Shift+←/→ で `ImeEngine::resize` を呼び、結果・境界・候補 index を更新 |
+| T125 | Candidate UI flags 修正 | `GetUpdatedFlags` と `GetDocumentMgr`/candidate string 更新通知の整合を取る |
+| T126 | Windows 実行時 smoke test | `scripts/ime-smoke.ps1` で DLL export、登録/解除、`serve --ime` 起動確認を CI 化 |
+
+---
+
 ## 依存関係
 
 ```

@@ -52,9 +52,14 @@ pub use viterbi::group_clauses;
 
 /// 文節境界を調整する
 pub use viterbi::resize_boundaries;
+pub use viterbi::validate_boundaries;
 
 /// 文節境界を指定して変換する
 pub use viterbi::convert_with_boundaries;
+pub use viterbi::try_convert_with_boundaries;
+
+/// 文節リストから文節境界を計算する
+pub use viterbi::clause_boundaries;
 
 #[cfg(test)]
 mod tests {

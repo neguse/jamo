@@ -2,15 +2,18 @@
 ///
 /// TSF ではテキスト変更は全て EditSession コールバック経由で行う。
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use windows::Win32::UI::TextServices::*;
 use windows::core::{Interface as _, Result, implement};
+
+use crate::globals::ComObjectGuard;
 
 /// Composition テキスト更新の EditSession を要求
 pub fn request_update_composition(
     context: &ITfContext,
     client_id: u32,
-    composition: &RefCell<Option<ITfComposition>>,
+    composition: &Rc<RefCell<Option<ITfComposition>>>,
     text: &str,
     sink: &ITfCompositionSink,
 ) -> Result<()> {
@@ -18,12 +21,12 @@ pub fn request_update_composition(
         context: context.clone(),
         composition: composition.clone(),
         text: text.to_string(),
-        client_id,
         sink: sink.clone(),
+        _lifetime: ComObjectGuard::new(),
     };
     let session: ITfEditSession = session.into();
     unsafe {
-        context.RequestEditSession(client_id, &session, TF_ES_READWRITE | TF_ES_SYNC)?;
+        let _ = context.RequestEditSession(client_id, &session, TF_ES_READWRITE | TF_ES_SYNC)?;
     }
     Ok(())
 }
@@ -32,18 +35,17 @@ pub fn request_update_composition(
 pub fn request_end_composition(
     context: &ITfContext,
     client_id: u32,
-    composition: &RefCell<Option<ITfComposition>>,
+    composition: &Rc<RefCell<Option<ITfComposition>>>,
     text: &str,
 ) -> Result<()> {
     let session = EndCompositionSession {
-        context: context.clone(),
         composition: composition.clone(),
         text: text.to_string(),
-        client_id,
+        _lifetime: ComObjectGuard::new(),
     };
     let session: ITfEditSession = session.into();
     unsafe {
-        context.RequestEditSession(client_id, &session, TF_ES_READWRITE | TF_ES_SYNC)?;
+        let _ = context.RequestEditSession(client_id, &session, TF_ES_READWRITE | TF_ES_SYNC)?;
     }
     Ok(())
 }
@@ -53,10 +55,10 @@ pub fn request_end_composition(
 #[implement(ITfEditSession)]
 struct UpdateCompositionSession {
     context: ITfContext,
-    composition: RefCell<Option<ITfComposition>>,
+    composition: Rc<RefCell<Option<ITfComposition>>>,
     text: String,
-    client_id: u32,
     sink: ITfCompositionSink,
+    _lifetime: ComObjectGuard,
 }
 
 impl ITfEditSession_Impl for UpdateCompositionSession_Impl {
@@ -85,10 +87,9 @@ impl ITfEditSession_Impl for UpdateCompositionSession_Impl {
 
 #[implement(ITfEditSession)]
 struct EndCompositionSession {
-    context: ITfContext,
-    composition: RefCell<Option<ITfComposition>>,
+    composition: Rc<RefCell<Option<ITfComposition>>>,
     text: String,
-    client_id: u32,
+    _lifetime: ComObjectGuard,
 }
 
 impl ITfEditSession_Impl for EndCompositionSession_Impl {
@@ -96,11 +97,9 @@ impl ITfEditSession_Impl for EndCompositionSession_Impl {
         unsafe {
             let mut comp = self.composition.borrow_mut();
             if let Some(composition) = comp.take() {
-                if !self.text.is_empty() {
-                    let range = composition.GetRange()?;
-                    let text_u16: Vec<u16> = self.text.encode_utf16().collect();
-                    range.SetText(ec, 0, &text_u16)?;
-                }
+                let range = composition.GetRange()?;
+                let text_u16: Vec<u16> = self.text.encode_utf16().collect();
+                range.SetText(ec, 0, &text_u16)?;
                 composition.EndComposition(ec)?;
             }
         }

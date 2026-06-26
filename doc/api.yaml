@@ -6,6 +6,8 @@ info:
     かな漢字変換エンジン jamo の HTTP API。
     Cloudflare Workers + Durable Object で動作。
     ユーザーごとに独立した辞書・学習データを持つ。
+    認証は HS256 JWT の Bearer token を使い、JWT の `sub` をユーザーIDとして扱う。
+    `?user=` 認証は `ALLOW_DEV_USER=true` の開発環境でのみ有効。
 
 servers:
   - url: https://jamo.example.com
@@ -13,7 +15,6 @@ servers:
 
 security:
   - bearerAuth: []
-  - queryAuth: []
 
 paths:
   /health:
@@ -56,7 +57,7 @@ paths:
           in: query
           schema:
             type: string
-          description: ユーザーID (開発用)
+          description: ユーザーID (`ALLOW_DEV_USER=true` の開発環境のみ)
       responses:
         "200":
           description: 変換結果
@@ -66,6 +67,10 @@ paths:
                 $ref: "#/components/schemas/ConvertResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /resize:
     get:
@@ -115,6 +120,10 @@ paths:
                 $ref: "#/components/schemas/ConvertResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /predict:
     get:
@@ -145,6 +154,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PredictResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /commit:
     post:
@@ -177,6 +190,12 @@ paths:
                 properties:
                   ok:
                     type: boolean
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /dict/add:
     post:
@@ -203,6 +222,12 @@ paths:
                 properties:
                   ok:
                     type: boolean
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /dict/remove:
     post:
@@ -222,6 +247,12 @@ paths:
       responses:
         "200":
           description: OK
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /dict/list:
     get:
@@ -243,6 +274,10 @@ paths:
                           type: string
                         surface:
                           type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /dict/import:
     post:
@@ -277,6 +312,12 @@ paths:
                     type: boolean
                   added:
                     type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /ws:
     get:
@@ -296,6 +337,10 @@ paths:
       responses:
         "101":
           description: WebSocket upgrade
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
 components:
   schemas:
@@ -344,14 +389,28 @@ components:
             properties:
               error:
                 type: string
+    Unauthorized:
+      description: 認証エラー
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    MethodNotAllowed:
+      description: メソッド不許可
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
 
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
-      description: "Authorization: Bearer <user_id>"
-    queryAuth:
-      type: apiKey
-      in: query
-      name: user
-      description: "?user=<user_id> (開発用)"
+      bearerFormat: JWT
+      description: "Authorization: Bearer <HS256 JWT。sub を user_id として使用>"

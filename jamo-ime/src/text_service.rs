@@ -2,6 +2,7 @@
 ///
 /// IME のメインエントリポイント。有効化/無効化、キーイベント処理を管理。
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::OnceLock;
 
 use windows::Win32::Foundation::{LPARAM, WPARAM};
@@ -11,7 +12,7 @@ use windows::core::{BOOL, GUID, Interface as _, Ref, Result, implement};
 use crate::composition::{Action, InputState};
 use crate::edit_session;
 use crate::engine::ImeEngine;
-use crate::globals::{GUID_PRESERVED_KEY_ALT_BACKQUOTE, GUID_PRESERVED_KEY_ONOFF};
+use crate::globals::{ComObjectGuard, GUID_PRESERVED_KEY_ALT_BACKQUOTE, GUID_PRESERVED_KEY_ONOFF};
 
 /// PreservedKey: 半角/全角 (VK_KANJI = 0x19)
 const TF_PRESERVED_KEY_ONOFF: TF_PRESERVEDKEY = TF_PRESERVEDKEY {
@@ -35,9 +36,10 @@ const TF_PRESERVED_KEY_ALT_BACKQUOTE: TF_PRESERVEDKEY = TF_PRESERVEDKEY {
 pub struct JamoTextService {
     thread_mgr: RefCell<Option<ITfThreadMgr>>,
     client_id: RefCell<u32>,
-    composition: RefCell<Option<ITfComposition>>,
+    composition: Rc<RefCell<Option<ITfComposition>>>,
     state: RefCell<InputState>,
     engine: OnceLock<ImeEngine>,
+    _lifetime: ComObjectGuard,
 }
 
 impl JamoTextService {
@@ -46,9 +48,10 @@ impl JamoTextService {
         Self {
             thread_mgr: RefCell::new(None),
             client_id: RefCell::new(0),
-            composition: RefCell::new(None),
+            composition: Rc::new(RefCell::new(None)),
             state: RefCell::new(InputState::composing()),
             engine: OnceLock::new(),
+            _lifetime: ComObjectGuard::new(),
         }
     }
 
@@ -139,6 +142,26 @@ impl JamoTextService {
                 )?;
                 Ok(true)
             }
+            Action::ResizeClause(delta) => {
+                if let Some(engine) = self.engine.get() {
+                    let request = self.state.borrow().resize_request(delta);
+                    if let Some((input, boundaries, clause, delta)) = request {
+                        if let Some(result) = engine.resize(&input, &boundaries, clause, delta, 9) {
+                            self.state.borrow_mut().apply_resize_result(result);
+                        }
+                    }
+                }
+                let text = self.state.borrow().display_text();
+                let sink = self.get_composition_sink()?;
+                edit_session::request_update_composition(
+                    context,
+                    client_id,
+                    &self.composition,
+                    &text,
+                    &sink,
+                )?;
+                Ok(true)
+            }
             Action::CancelConversion(hiragana) => {
                 let sink = self.get_composition_sink()?;
                 edit_session::request_update_composition(
@@ -152,10 +175,50 @@ impl JamoTextService {
                 Ok(true)
             }
             Action::ToggleMode => {
-                self.state.borrow_mut().toggle_mode();
+                self.commit_if_active_then_toggle(context)?;
                 Ok(true)
             }
             Action::Noop => Ok(false),
+        }
+    }
+
+    fn commit_if_active_then_toggle(&self, context: &ITfContext) -> Result<()> {
+        let client_id = *self.client_id.borrow();
+        let is_direct = matches!(&*self.state.borrow(), InputState::Direct);
+        if is_direct {
+            self.state.borrow_mut().toggle_mode();
+        } else {
+            let text = self.state.borrow().display_text();
+            edit_session::request_end_composition(context, client_id, &self.composition, &text)?;
+            self.state.borrow_mut().toggle_mode();
+        }
+        Ok(())
+    }
+
+    fn commit_active_display_from_focus(&self) {
+        if matches!(&*self.state.borrow(), InputState::Direct)
+            || self.composition.borrow().is_none()
+        {
+            return;
+        }
+
+        let text = self.state.borrow().display_text();
+        let client_id = *self.client_id.borrow();
+        let thread_mgr = self.thread_mgr.borrow().clone();
+
+        if let Some(thread_mgr) = thread_mgr {
+            unsafe {
+                if let Ok(document_mgr) = thread_mgr.GetFocus() {
+                    if let Ok(context) = document_mgr.GetTop() {
+                        let _ = edit_session::request_end_composition(
+                            &context,
+                            client_id,
+                            &self.composition,
+                            &text,
+                        );
+                    }
+                }
+            }
         }
     }
 }
@@ -215,6 +278,7 @@ impl ITfTextInputProcessor_Impl for JamoTextService_Impl {
     }
 
     fn Deactivate(&self) -> Result<()> {
+        self.commit_active_display_from_focus();
         let client_id = *self.client_id.borrow();
         if let Some(thread_mgr) = self.thread_mgr.borrow().as_ref() {
             unsafe {
@@ -233,6 +297,7 @@ impl ITfTextInputProcessor_Impl for JamoTextService_Impl {
         }
         *self.thread_mgr.borrow_mut() = None;
         *self.client_id.borrow_mut() = 0;
+        *self.composition.borrow_mut() = None;
         *self.state.borrow_mut() = InputState::composing();
         Ok(())
     }
@@ -276,10 +341,14 @@ impl ITfKeyEventSink_Impl for JamoTextService_Impl {
         Ok(BOOL(0))
     }
 
-    fn OnPreservedKey(&self, _pic: Ref<'_, ITfContext>, rguid: *const GUID) -> Result<BOOL> {
+    fn OnPreservedKey(&self, pic: Ref<'_, ITfContext>, rguid: *const GUID) -> Result<BOOL> {
         unsafe {
-            if *rguid == GUID_PRESERVED_KEY_ONOFF || *rguid == GUID_PRESERVED_KEY_ALT_BACKQUOTE {
-                self.state.borrow_mut().toggle_mode();
+            if !rguid.is_null()
+                && (*rguid == GUID_PRESERVED_KEY_ONOFF
+                    || *rguid == GUID_PRESERVED_KEY_ALT_BACKQUOTE)
+            {
+                let context = pic.clone().ok_or(windows::Win32::Foundation::E_FAIL)?;
+                self.commit_if_active_then_toggle(&context)?;
                 Ok(BOOL(1))
             } else {
                 Ok(BOOL(0))

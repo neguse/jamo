@@ -4,7 +4,7 @@
 use windows::Win32::UI::TextServices::*;
 use windows::core::{BSTR, GUID, Result, implement};
 
-use crate::globals::{GUID_DA_CONVERTED, GUID_DA_FOCUSED, GUID_DA_INPUT};
+use crate::globals::{ComObjectGuard, GUID_DA_CONVERTED, GUID_DA_FOCUSED, GUID_DA_INPUT};
 
 /// 表示属性の種類
 #[derive(Debug, Clone, Copy)]
@@ -19,6 +19,7 @@ enum AttributeKind {
 pub fn enum_display_attribute_info() -> Result<IEnumTfDisplayAttributeInfo> {
     let enumerator = DisplayAttributeInfoEnum {
         index: std::cell::Cell::new(0),
+        _lifetime: ComObjectGuard::new(),
     };
     Ok(enumerator.into())
 }
@@ -27,11 +28,23 @@ pub fn get_display_attribute_info(guid: *const GUID) -> Result<ITfDisplayAttribu
     unsafe {
         let guid = &*guid;
         if *guid == GUID_DA_INPUT {
-            Ok(JamoDisplayAttributeInfo(AttributeKind::Input).into())
+            Ok(JamoDisplayAttributeInfo {
+                kind: AttributeKind::Input,
+                _lifetime: ComObjectGuard::new(),
+            }
+            .into())
         } else if *guid == GUID_DA_CONVERTED {
-            Ok(JamoDisplayAttributeInfo(AttributeKind::Converted).into())
+            Ok(JamoDisplayAttributeInfo {
+                kind: AttributeKind::Converted,
+                _lifetime: ComObjectGuard::new(),
+            }
+            .into())
         } else if *guid == GUID_DA_FOCUSED {
-            Ok(JamoDisplayAttributeInfo(AttributeKind::Focused).into())
+            Ok(JamoDisplayAttributeInfo {
+                kind: AttributeKind::Focused,
+                _lifetime: ComObjectGuard::new(),
+            }
+            .into())
         } else {
             Err(windows::Win32::Foundation::E_INVALIDARG.into())
         }
@@ -41,7 +54,17 @@ pub fn get_display_attribute_info(guid: *const GUID) -> Result<ITfDisplayAttribu
 // --- ITfDisplayAttributeProvider ---
 
 #[implement(ITfDisplayAttributeProvider)]
-pub struct JamoDisplayAttributeProvider;
+pub struct JamoDisplayAttributeProvider {
+    _lifetime: ComObjectGuard,
+}
+
+impl JamoDisplayAttributeProvider {
+    pub fn new() -> Self {
+        Self {
+            _lifetime: ComObjectGuard::new(),
+        }
+    }
+}
 
 impl ITfDisplayAttributeProvider_Impl for JamoDisplayAttributeProvider_Impl {
     fn EnumDisplayAttributeInfo(&self) -> Result<IEnumTfDisplayAttributeInfo> {
@@ -58,12 +81,14 @@ impl ITfDisplayAttributeProvider_Impl for JamoDisplayAttributeProvider_Impl {
 #[implement(IEnumTfDisplayAttributeInfo)]
 struct DisplayAttributeInfoEnum {
     index: std::cell::Cell<usize>,
+    _lifetime: ComObjectGuard,
 }
 
 impl IEnumTfDisplayAttributeInfo_Impl for DisplayAttributeInfoEnum_Impl {
     fn Clone(&self) -> Result<IEnumTfDisplayAttributeInfo> {
         let cloned = DisplayAttributeInfoEnum {
             index: self.index.clone(),
+            _lifetime: ComObjectGuard::new(),
         };
         Ok(cloned.into())
     }
@@ -86,7 +111,11 @@ impl IEnumTfDisplayAttributeInfo_Impl for DisplayAttributeInfoEnum_Impl {
             if idx >= kinds.len() {
                 break;
             }
-            let info: ITfDisplayAttributeInfo = JamoDisplayAttributeInfo(kinds[idx]).into();
+            let info: ITfDisplayAttributeInfo = JamoDisplayAttributeInfo {
+                kind: kinds[idx],
+                _lifetime: ComObjectGuard::new(),
+            }
+            .into();
             unsafe {
                 *rginfo.add(i) = Some(info);
             }
@@ -123,11 +152,14 @@ impl IEnumTfDisplayAttributeInfo_Impl for DisplayAttributeInfoEnum_Impl {
 // --- ITfDisplayAttributeInfo ---
 
 #[implement(ITfDisplayAttributeInfo)]
-struct JamoDisplayAttributeInfo(AttributeKind);
+struct JamoDisplayAttributeInfo {
+    kind: AttributeKind,
+    _lifetime: ComObjectGuard,
+}
 
 impl ITfDisplayAttributeInfo_Impl for JamoDisplayAttributeInfo_Impl {
     fn GetGUID(&self) -> Result<GUID> {
-        Ok(match self.0 {
+        Ok(match self.kind {
             AttributeKind::Input => GUID_DA_INPUT,
             AttributeKind::Converted => GUID_DA_CONVERTED,
             AttributeKind::Focused => GUID_DA_FOCUSED,
@@ -135,7 +167,7 @@ impl ITfDisplayAttributeInfo_Impl for JamoDisplayAttributeInfo_Impl {
     }
 
     fn GetDescription(&self) -> Result<BSTR> {
-        Ok(BSTR::from(match self.0 {
+        Ok(BSTR::from(match self.kind {
             AttributeKind::Input => "Jamo Input",
             AttributeKind::Converted => "Jamo Converted",
             AttributeKind::Focused => "Jamo Focused",
@@ -147,7 +179,7 @@ impl ITfDisplayAttributeInfo_Impl for JamoDisplayAttributeInfo_Impl {
             if pda.is_null() {
                 return Err(windows::Win32::Foundation::E_POINTER.into());
             }
-            *pda = match self.0 {
+            *pda = match self.kind {
                 AttributeKind::Input => TF_DISPLAYATTRIBUTE {
                     crText: TF_DA_COLOR {
                         r#type: TF_DA_COLORTYPE(0), // TF_CT_NONE

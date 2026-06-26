@@ -57,7 +57,10 @@ export class JamoEngine implements DurableObject {
     if (cached) return cached;
 
     if (!this.loadPromises.has(key)) {
-      this.loadPromises.set(key, this.loadEngine(key));
+      const promise = this.loadEngine(key).finally(() => {
+        this.loadPromises.delete(key);
+      });
+      this.loadPromises.set(key, promise);
     }
     await this.loadPromises.get(key)!;
     return this.engines.get(key)!;
@@ -86,6 +89,9 @@ export class JamoEngine implements DurableObject {
 
     // WebSocket upgrade
     if (url.pathname === "/ws") {
+      if (request.method !== "GET") {
+        return methodNotAllowed();
+      }
       if (request.headers.get("Upgrade") !== "websocket") {
         return jsonResponse({ error: "expected websocket" }, 426);
       }
@@ -97,20 +103,28 @@ export class JamoEngine implements DurableObject {
     try {
       switch (url.pathname) {
         case "/convert":
+          if (request.method !== "GET") return methodNotAllowed();
           return this.handleConvert(url);
         case "/resize":
+          if (request.method !== "GET") return methodNotAllowed();
           return this.handleResize(url);
         case "/commit":
+          if (request.method !== "POST") return methodNotAllowed();
           return this.handleCommit(request);
         case "/predict":
+          if (request.method !== "GET") return methodNotAllowed();
           return this.handlePredict(url);
         case "/dict/add":
+          if (request.method !== "POST") return methodNotAllowed();
           return this.handleDictAdd(request);
         case "/dict/remove":
+          if (request.method !== "POST") return methodNotAllowed();
           return this.handleDictRemove(request);
         case "/dict/list":
+          if (request.method !== "GET") return methodNotAllowed();
           return this.handleDictList();
         case "/dict/import":
+          if (request.method !== "POST") return methodNotAllowed();
           return this.handleDictImport(request);
         default:
           return jsonResponse({ error: "not found" }, 404);
@@ -127,7 +141,13 @@ export class JamoEngine implements DurableObject {
       return jsonResponse({ error: "missing q parameter" }, 400);
     }
 
-    const n = parseInt(url.searchParams.get("n") ?? "5", 10);
+    let n: number;
+    try {
+      n = parseNonNegativeInt(url.searchParams.get("n") ?? "5", "n");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return jsonResponse({ error: message }, 400);
+    }
     const domain = url.searchParams.get("domain") ?? undefined;
     const engine = await this.ensureEngine(domain);
     const resultJson = engine.convert(q, n);
@@ -152,20 +172,34 @@ export class JamoEngine implements DurableObject {
       );
     }
 
-    const boundaries = JSON.parse(`[${boundariesParam}]`);
-    const clauseIdx = parseInt(clauseParam, 10);
-    const delta = parseInt(deltaParam, 10);
-    const n = parseInt(url.searchParams.get("n") ?? "5", 10);
+    let boundaries: number[];
+    try {
+      boundaries = parseBoundariesParam(boundariesParam);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return jsonResponse({ error: message }, 400);
+    }
+    let clauseIdx: number;
+    let delta: number;
+    let n: number;
+    try {
+      clauseIdx = parseNonNegativeInt(clauseParam, "clause");
+      delta = parseInteger(deltaParam, "delta");
+      n = parseNonNegativeInt(url.searchParams.get("n") ?? "5", "n");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return jsonResponse({ error: message }, 400);
+    }
     const domain = url.searchParams.get("domain") ?? undefined;
 
     const engine = await this.ensureEngine(domain);
-    const resultJson = engine.resize(
-      q,
-      JSON.stringify(boundaries),
-      clauseIdx,
-      delta,
-      n
-    );
+    let resultJson: string;
+    try {
+      resultJson = engine.resize(q, JSON.stringify(boundaries), clauseIdx, delta, n);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return jsonResponse({ error: message }, 400);
+    }
     const result: ConvertResponse = JSON.parse(resultJson);
     this.injectUserDict(result);
     this.reorderCandidates(result);
@@ -180,7 +214,13 @@ export class JamoEngine implements DurableObject {
       return jsonResponse({ error: "missing q parameter" }, 400);
     }
 
-    const limit = parseInt(url.searchParams.get("limit") ?? "10", 10);
+    let limit: number;
+    try {
+      limit = parseNonNegativeInt(url.searchParams.get("limit") ?? "10", "limit");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return jsonResponse({ error: message }, 400);
+    }
     const domain = url.searchParams.get("domain") ?? undefined;
     const engine = await this.ensureEngine(domain);
     const resultJson = engine.predict(q, limit);
@@ -223,7 +263,10 @@ export class JamoEngine implements DurableObject {
   }
 
   private async handleCommit(request: Request): Promise<Response> {
-    const body = (await request.json()) as {
+    const parsed = await readJson(request);
+    if (!parsed.ok) return parsed.response;
+
+    const body = parsed.value as {
       clauses?: { yomi: string; surface: string }[];
     };
     if (!body.clauses || !Array.isArray(body.clauses)) {
@@ -257,7 +300,10 @@ export class JamoEngine implements DurableObject {
   }
 
   private async handleDictAdd(request: Request): Promise<Response> {
-    const body = (await request.json()) as { yomi?: string; surface?: string };
+    const parsed = await readJson(request);
+    if (!parsed.ok) return parsed.response;
+
+    const body = parsed.value as { yomi?: string; surface?: string };
     if (!body.yomi || !body.surface) {
       return jsonResponse({ error: "missing yomi or surface" }, 400);
     }
@@ -270,7 +316,10 @@ export class JamoEngine implements DurableObject {
   }
 
   private async handleDictRemove(request: Request): Promise<Response> {
-    const body = (await request.json()) as { yomi?: string; surface?: string };
+    const parsed = await readJson(request);
+    if (!parsed.ok) return parsed.response;
+
+    const body = parsed.value as { yomi?: string; surface?: string };
     if (!body.yomi || !body.surface) {
       return jsonResponse({ error: "missing yomi or surface" }, 400);
     }
@@ -294,7 +343,10 @@ export class JamoEngine implements DurableObject {
   }
 
   private async handleDictImport(request: Request): Promise<Response> {
-    const body = (await request.json()) as {
+    const parsed = await readJson(request);
+    if (!parsed.ok) return parsed.response;
+
+    const body = parsed.value as {
       entries?: { yomi: string; surface: string }[];
     };
     if (!body.entries || !Array.isArray(body.entries)) {
@@ -303,8 +355,19 @@ export class JamoEngine implements DurableObject {
     let added = 0;
     for (const entry of body.entries) {
       if (!entry.yomi || !entry.surface) continue;
+      let exists = false;
+      const existing = this.state.storage.sql.exec(
+        "SELECT 1 FROM user_dict WHERE yomi = ? AND surface = ? LIMIT 1",
+        entry.yomi,
+        entry.surface
+      );
+      for (const _row of existing) {
+        exists = true;
+        break;
+      }
+      if (exists) continue;
       this.state.storage.sql.exec(
-        "INSERT OR IGNORE INTO user_dict (yomi, surface) VALUES (?, ?)",
+        "INSERT INTO user_dict (yomi, surface) VALUES (?, ?)",
         entry.yomi,
         entry.surface
       );
@@ -360,14 +423,17 @@ export class JamoEngine implements DurableObject {
       return;
     }
 
+    let id: unknown;
     try {
       const msg = JSON.parse(message);
-      const id = msg.id;
-      const engine = await this.ensureEngine(msg.domain);
+      id = msg.id;
 
       switch (msg.type) {
         case "convert": {
-          const resultJson = engine.convert(msg.q ?? "", msg.n ?? 5);
+          const q = requireString(msg.q, "q");
+          const n = parseOptionalNonNegativeInt(msg.n, 5, "n");
+          const engine = await this.ensureEngine(msg.domain);
+          const resultJson = engine.convert(q, n);
           const result: ConvertResponse = JSON.parse(resultJson);
           this.injectUserDict(result);
           this.reorderCandidates(result);
@@ -375,12 +441,18 @@ export class JamoEngine implements DurableObject {
           break;
         }
         case "resize": {
+          const q = requireString(msg.q, "q");
+          const boundaries = parseBoundariesValue(msg.boundaries);
+          const clause = parseNonNegativeIntegerValue(msg.clause, "clause");
+          const delta = parseIntegerValue(msg.delta, "delta");
+          const n = parseOptionalNonNegativeInt(msg.n, 5, "n");
+          const engine = await this.ensureEngine(msg.domain);
           const resultJson = engine.resize(
-            msg.q ?? "",
-            JSON.stringify(msg.boundaries ?? []),
-            msg.clause ?? 0,
-            msg.delta ?? 0,
-            msg.n ?? 5
+            q,
+            JSON.stringify(boundaries),
+            clause,
+            delta,
+            n
           );
           const result: ConvertResponse = JSON.parse(resultJson);
           this.injectUserDict(result);
@@ -389,14 +461,16 @@ export class JamoEngine implements DurableObject {
           break;
         }
         case "predict": {
-          const limit = msg.limit ?? 10;
-          const resultJson = engine.predict(msg.q ?? "", limit);
+          const q = requireString(msg.q, "q");
+          const limit = parseOptionalNonNegativeInt(msg.limit, 10, "limit");
+          const engine = await this.ensureEngine(msg.domain);
+          const resultJson = engine.predict(q, limit);
           const result = JSON.parse(resultJson);
           // ユーザー辞書・履歴も追加
           const userCandidates: string[] = [];
           const dCursor = this.state.storage.sql.exec(
             "SELECT surface FROM user_dict WHERE yomi LIKE ? || '%' LIMIT ?",
-            msg.q ?? "",
+            q,
             limit
           );
           for (const row of dCursor) {
@@ -404,7 +478,7 @@ export class JamoEngine implements DurableObject {
           }
           const hCursor = this.state.storage.sql.exec(
             "SELECT surface FROM user_history WHERE yomi LIKE ? || '%' ORDER BY count DESC LIMIT ?",
-            msg.q ?? "",
+            q,
             limit
           );
           for (const row of hCursor) {
@@ -492,13 +566,104 @@ export class JamoEngine implements DurableObject {
       }
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
-      ws.send(JSON.stringify({ error }));
+      ws.send(JSON.stringify({ id, error }));
     }
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
     ws.close();
   }
+}
+
+function parseBoundariesParam(value: string): number[] {
+  if (value.trim() === "") {
+    throw new Error("boundaries must not be empty");
+  }
+  return value.split(",").map((part) => {
+    const trimmed = part.trim();
+    if (trimmed === "") {
+      throw new Error("empty boundary value");
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isSafeInteger(parsed) || parsed < 0) {
+      throw new Error(`invalid boundary value: ${trimmed}`);
+    }
+    return parsed;
+  });
+}
+
+function parseBoundariesValue(value: unknown): number[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("boundaries must be a non-empty array");
+  }
+  return value.map((entry) => parseNonNegativeIntegerValue(entry, "boundary"));
+}
+
+function parseNonNegativeInt(value: string, name: string): number {
+  const parsed = parseInteger(value, name);
+  if (parsed < 0) {
+    throw new Error(`${name} must be non-negative`);
+  }
+  return parsed;
+}
+
+function parseInteger(value: string, name: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${name} must be an integer`);
+  }
+  return parsed;
+}
+
+function parseOptionalNonNegativeInt(
+  value: unknown,
+  fallback: number,
+  name: string
+): number {
+  if (value === undefined || value === null) return fallback;
+  return parseNonNegativeIntegerValue(value, name);
+}
+
+function parseNonNegativeIntegerValue(value: unknown, name: string): number {
+  const parsed = parseIntegerValue(value, name);
+  if (parsed < 0) {
+    throw new Error(`${name} must be non-negative`);
+  }
+  return parsed;
+}
+
+function parseIntegerValue(value: unknown, name: string): number {
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`${name} must be an integer`);
+  }
+  return value as number;
+}
+
+function requireString(value: unknown, name: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${name} must be a non-empty string`);
+  }
+  return value;
+}
+
+async function readJson(
+  request: Request
+): Promise<
+  | { ok: true; value: unknown }
+  | { ok: false; response: Response }
+> {
+  try {
+    return { ok: true, value: await request.json() };
+  } catch {
+    return {
+      ok: false,
+      response: jsonResponse({ error: "invalid JSON body" }, 400),
+    };
+  }
+}
+
+function methodNotAllowed(): Response {
+  return jsonResponse({ error: "method not allowed" }, 405);
 }
 
 function jsonResponse(data: unknown, status = 200): Response {

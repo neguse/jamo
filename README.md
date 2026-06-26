@@ -79,6 +79,8 @@ cargo run -- dict merge --base data/ipadic --extra extra1.csv --extra extra2/ -o
 
 詳細は [doc/api.yaml](doc/api.yaml) (OpenAPI 3.0.3) を参照。
 
+Cloudflare Worker 版は `Authorization: Bearer <JWT>` が必要。JWT は HS256 で署名し、`sub` をユーザーIDとして扱う。開発時だけ `ALLOW_DEV_USER=true` を設定すると `?user=<id>` も使える。
+
 ## WASM ビルド
 
 ```bash
@@ -109,14 +111,17 @@ cbindgen --config jamo-core/cbindgen.toml -o include/jamo.h jamo-core
 ```bash
 cd jamo-worker
 npm install
-wrangler deploy
+wrangler secret put JWT_SECRET
+npm run deploy
 ```
 
 R2 バケットに辞書バイナリ (`ipadic.dict`) をアップロード:
 
 ```bash
-wrangler r2 object put DICT_BUCKET/ipadic.dict --file data/ipadic.dict
+wrangler r2 object put jamo-dicts/ipadic.dict --file ../data/ipadic.dict
 ```
+
+`npm run deploy` は事前に `npm run build-wasm` を実行し、`jamo-core/pkg` を生成してからデプロイする。
 
 ## Windows IME
 

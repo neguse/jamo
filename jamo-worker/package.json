@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
+    "predeploy": "npm run build-wasm",
     "deploy": "wrangler deploy",
     "build-wasm": "cd ../jamo-core && wasm-pack build --target web --features wasm"
   },
