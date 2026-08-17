@@ -73,13 +73,16 @@
 | Adjective | 0% |
 | **全体** | **48.1%** (文字精度 69.1%) |
 
+## 組み込み C API
+
+単一プロセス組み込み (DM250 / lite-dm2x 等) 向けに capi.rs で公開:
+`jamo_convert` / `jamo_predict` に加え、文節伸縮 `jamo_resize` と
+ローマ字変換器 `jamo_romaji_*` (new/free/feed/backspace/flush/pending/reset)。
+ヘッダは cbindgen 生成 (include/jamo.h)。
+
 ## テスト
 
-全127テスト通過:
-- jamo-core: 101 (60 unit + 35 romaji + 6 IPC)
-- jamo-cli: 8 (4 CLI + 2 HTTP + 2 IME IPC)
-- jamo-ime: 16 (composition 状態マシン)
-- accuracy: 2
+全146テスト通過 (2026-08-18 実測、cargo test)
 
 ## プロジェクト構成
 

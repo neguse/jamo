@@ -259,3 +259,19 @@
   - DLL 側の辞書ロードを完全削除。サーバー側に辞書を集約することで DLL サイズ削減 + ロード時間短縮。
   - Mozc/azooKey 等の先行 IME と同じマルチプロセスパターンを採用。
 - 残課題: Windows 実機テスト。IPC タイムアウト設定。サーバー自動起動 (DLL からサーバープロセスを起動)。
+
+### C API 拡張: jamo_resize + jamo_romaji_* ✓ (2026-08-18)
+- やったこと:
+    - capi.rs に文節伸縮 `jamo_resize` を追加 (resize_boundaries → try_convert_with_boundaries を convert と同じ JSON で返す)
+    - RomajiConverter の C API `jamo_romaji_new/free/feed/backspace/flush/pending/reset` と `JAMO_BACKSPACE_*` 定数を追加
+    - convert の JSON 生成を `convert_result_to_json` に共通化
+    - cbindgen 設定に JamoCRomaji (jamo_romaji_t) を追加しヘッダ再生成
+    - capi テスト 5 件追加 (romaji 3 + 実辞書での convert/resize e2e 2)
+- 変更したファイル: jamo-core/src/capi.rs, jamo-core/cbindgen.toml, jamo-core/include/jamo.h, doc/current.md, doc/done.md
+- よかったこと: HTTP /resize と同じ流れ (resize → 再変換) を C API でも踏襲し、応答 JSON を convert と共通化できた
+- 判断:
+    - DM250 組み込み (lite-dm2x) は単一プロセスで使うため、IPC (ime_server) ではなく in-process C API を選択
+    - romaji の状態は不透明ハンドルで保持 (グローバル状態を避け、複数インスタンス可)
+    - boundaries はカンマ区切り文字列で受ける (HTTP API のパラメータ表現と揃え、C の配列受け渡しを避ける)
+    - engine 系テストは ../data/ipadic.dict が無ければ skip (既存 test_convert_with_ipadic と同じ流儀)
+- 残課題: 学習・ユーザー辞書は core 未実装 (DM250 は当面無学習で使う)

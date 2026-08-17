@@ -9,6 +9,21 @@
 #include <stdlib.h>
 
 /**
+ * jamo_romaji_backspace の返値: 未確定ローマ字を1文字消した
+ */
+#define JAMO_BACKSPACE_PENDING 0
+
+/**
+ * jamo_romaji_backspace の返値: 未確定ローマ字が空。呼び出し側がひらがなを消すべき
+ */
+#define JAMO_BACKSPACE_HIRAGANA 1
+
+/**
+ * jamo_romaji_backspace の返値: 消すものがない
+ */
+#define JAMO_BACKSPACE_EMPTY 2
+
+/**
  * 品詞タイプ: 自立語 (文節の先頭になれる)
  */
 #define POS_CONTENT 0
@@ -24,15 +39,26 @@
 typedef struct jamo_engine_t jamo_engine_t;
 
 /**
+ * 不透明なローマ字変換器ハンドル
+ */
+typedef struct jamo_romaji_t jamo_romaji_t;
+
+/**
  * バイナリ辞書ファイルからエンジンを生成
  *
  * 成功時はハンドルのポインタ、失敗時は NULL を返す。
  * 呼び出し側は使用後に `jamo_engine_free` で解放すること。
+ *
+ * # Safety
+ * `dict_path` は有効なヌル終端 UTF-8 文字列を指すこと。
  */
 struct jamo_engine_t *jamo_engine_open(const char *dict_path);
 
 /**
  * エンジンを解放
+ *
+ * # Safety
+ * `engine` は `jamo_engine_open` が返した有効なポインタ、または NULL であること。
  */
 void jamo_engine_free(struct jamo_engine_t *engine);
 
@@ -41,19 +67,113 @@ void jamo_engine_free(struct jamo_engine_t *engine);
  *
  * JSON 文字列を返す。呼び出し側は `jamo_string_free` で解放すること。
  * 失敗時は NULL を返す。
+ *
+ * # Safety
+ * `engine` は有効なエンジンポインタ、`input` は有効なヌル終端 UTF-8 文字列を指すこと。
  */
-char *jamo_convert(const struct jamo_engine_t *engine, const char *input, uint32_t n);
+char *jamo_convert(const struct jamo_engine_t *engine,
+                   const char *input,
+                   uint32_t n);
+
+/**
+ * 文節伸縮
+ *
+ * `boundaries` は `jamo_convert` が返す boundaries と同じ、カンマ区切りの
+ * 文節境界バイト位置。`clause_idx` の文節を `delta` 文字分伸縮 (+で伸ばす、
+ * -で縮める) し、新しい境界で再変換した結果を `jamo_convert` と同じ JSON で返す。
+ * 不正な操作・引数の場合は NULL を返す。
+ *
+ * # Safety
+ * `engine` は有効なエンジンポインタ、`input` と `boundaries` は有効な
+ * ヌル終端 UTF-8 文字列を指すこと。
+ */
+char *jamo_resize(const struct jamo_engine_t *engine,
+                  const char *input,
+                  const char *boundaries,
+                  uint32_t clause_idx,
+                  int32_t delta,
+                  uint32_t n);
 
 /**
  * 予測変換
  *
  * JSON 文字列を返す。呼び出し側は `jamo_string_free` で解放すること。
+ *
+ * # Safety
+ * `engine` は有効なエンジンポインタ、`prefix` は有効なヌル終端 UTF-8 文字列を指すこと。
  */
-char *jamo_predict(const struct jamo_engine_t *engine, const char *prefix, uint32_t limit);
+char *jamo_predict(const struct jamo_engine_t *engine,
+                   const char *prefix,
+                   uint32_t limit);
 
 /**
  * C API が返した文字列を解放
+ *
+ * # Safety
+ * `s` は `jamo_convert` / `jamo_predict` が返したポインタ、または NULL であること。
  */
 void jamo_string_free(char *s);
+
+/**
+ * ローマ字変換器を生成
+ *
+ * 呼び出し側は使用後に `jamo_romaji_free` で解放すること。
+ */
+struct jamo_romaji_t *jamo_romaji_new(void);
+
+/**
+ * ローマ字変換器を解放
+ *
+ * # Safety
+ * `romaji` は `jamo_romaji_new` が返した有効なポインタ、または NULL であること。
+ */
+void jamo_romaji_free(struct jamo_romaji_t *romaji);
+
+/**
+ * 1文字入力し、確定したひらがな (未確定なら空文字列) を返す
+ *
+ * `ch` は Unicode スカラ値。返値は `jamo_string_free` で解放すること。
+ * 不正な引数の場合は NULL を返す。
+ *
+ * # Safety
+ * `romaji` は `jamo_romaji_new` が返した有効なポインタであること。
+ */
+char *jamo_romaji_feed(struct jamo_romaji_t *romaji, uint32_t ch);
+
+/**
+ * Backspace 処理。JAMO_BACKSPACE_* のいずれかを返す
+ *
+ * # Safety
+ * `romaji` は `jamo_romaji_new` が返した有効なポインタであること。
+ */
+int32_t jamo_romaji_backspace(struct jamo_romaji_t *romaji);
+
+/**
+ * 未確定ローマ字を強制確定し、確定分 ("n" → "ん"、なければ空文字列) を返す
+ *
+ * 返値は `jamo_string_free` で解放すること。
+ *
+ * # Safety
+ * `romaji` は `jamo_romaji_new` が返した有効なポインタであること。
+ */
+char *jamo_romaji_flush(struct jamo_romaji_t *romaji);
+
+/**
+ * 現在の未確定ローマ字のコピーを返す
+ *
+ * 返値は `jamo_string_free` で解放すること。
+ *
+ * # Safety
+ * `romaji` は `jamo_romaji_new` が返した有効なポインタであること。
+ */
+char *jamo_romaji_pending(const struct jamo_romaji_t *romaji);
+
+/**
+ * 未確定ローマ字を破棄する
+ *
+ * # Safety
+ * `romaji` は `jamo_romaji_new` が返した有効なポインタであること。
+ */
+void jamo_romaji_reset(struct jamo_romaji_t *romaji);
 
 #endif  /* JAMO_H */
