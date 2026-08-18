@@ -213,12 +213,18 @@ pub fn decode_nbest(
     let n = n.max(1);
     let segments: Vec<Segment> = path
         .iter()
-        .map(|&idx| {
+        .enumerate()
+        .map(|(i, &idx)| {
             let node = &lattice.nodes[idx];
             let surface = node.surface.clone();
             let yomi = input[node.start..node.end].to_string();
 
-            // 同じ (start, end) 区間の他の候補を集める
+            // 同じ (start, end) 区間の他の候補を文脈込みコストで集める:
+            // total_cost (BOS からこのノードまでの最良コスト) + 次パスノードへの接続コスト
+            let next_left_id = path
+                .get(i + 1)
+                .map(|&next| lattice.nodes[next].left_id)
+                .unwrap_or(0); // 末尾は EOS (id 0)
             let mut others: Vec<(i64, String)> = lattice.ends_at[node.end]
                 .iter()
                 .filter_map(|&other_idx| {
@@ -228,15 +234,20 @@ pub fn decode_nbest(
                         && !other.surface.is_empty()
                         && other.surface != surface
                     {
-                        Some((other.word_cost, other.surface.clone()))
+                        let score = other
+                            .total_cost
+                            .saturating_add(conn.cost(other.right_id, next_left_id) as i64);
+                        Some((score, other.surface.clone()))
                     } else {
                         None
                     }
                 })
                 .collect();
 
-            others.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+            // 同一表層は最良スコアのみ残してからスコア順に並べる
+            others.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
             others.dedup_by(|a, b| a.1 == b.1);
+            others.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
 
             // Viterbi 最適を先頭に、残りを追加
             let mut candidates = vec![surface.clone()];

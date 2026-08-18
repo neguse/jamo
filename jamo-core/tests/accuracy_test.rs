@@ -409,6 +409,23 @@ fn test_accuracy_baseline() {
     );
 }
 
+/// 期待文を、各文節の上位 top_n 候補から1つずつ選んで組み立てられるか
+/// (= ユーザーが候補選択だけで正解にたどり着けるか)
+fn reachable_with_candidates(
+    clauses: &[jamo_core::viterbi::Clause],
+    expected: &str,
+    top_n: usize,
+) -> bool {
+    let Some((first, rest)) = clauses.split_first() else {
+        return expected.is_empty();
+    };
+    first.candidates.iter().take(top_n).any(|c| {
+        expected
+            .strip_prefix(c.as_str())
+            .is_some_and(|tail| reachable_with_candidates(rest, tail, top_n))
+    })
+}
+
 #[test]
 fn test_accuracy_clause_level() {
     let dict = match load_ipadic() {
@@ -423,6 +440,7 @@ fn test_accuracy_clause_level() {
     let mut top1_match = 0;
     let mut top5_match = 0;
     let total = corpus.len();
+    let mut unreachable = Vec::new();
 
     for tc in &corpus {
         let result = jamo_core::convert_nbest(tc.input, &dict, &dict, 5);
@@ -430,14 +448,11 @@ fn test_accuracy_clause_level() {
 
         if actual == tc.expected {
             top1_match += 1;
+        }
+        if reachable_with_candidates(&result.clauses, tc.expected, 5) {
             top5_match += 1;
         } else {
-            let clause_surfaces: String =
-                result.clauses.iter().map(|c| c.surface.as_str()).collect();
-            if clause_surfaces == tc.expected {
-                top1_match += 1;
-                top5_match += 1;
-            }
+            unreachable.push(tc.input);
         }
     }
 
@@ -446,5 +461,14 @@ fn test_accuracy_clause_level() {
 
     eprintln!("\n=== 文節精度テスト結果 ===");
     eprintln!("Top-1: {top1_match}/{total} ({top1_rate:.1}%)");
-    eprintln!("Top-5: {top5_match}/{total} ({top5_rate:.1}%)");
+    eprintln!("Top-5 (候補選択で到達可能): {top5_match}/{total} ({top5_rate:.1}%)");
+    if !unreachable.is_empty() {
+        eprintln!("候補5位以内で到達不能: {unreachable:?}");
+    }
+
+    // 回帰検出閾値
+    assert!(
+        top5_rate >= 60.0,
+        "Top-5 到達率 {top5_rate:.1}% が最低60%を下回っている (回帰)"
+    );
 }

@@ -189,6 +189,65 @@ fn test_nbest_ki() {
 }
 
 #[test]
+fn test_nbest_candidates_ranked_by_context() {
+    // 候補順は word_cost 単独ではなく、パス上の前後ノードとの接続コスト込みで決まる。
+    // 「をかく」: を(助詞) の後ろでは動詞が名詞より接続コストで有利になる設定。
+    // word_cost 順: 核(3000) < 欠く(4500) < 書く(5000)
+    // 文脈込み:     書く(Viterbi最良) < 欠く < 核
+    struct TestConn;
+    impl ConnectionCost for TestConn {
+        fn cost(&self, right_id: u16, left_id: u16) -> i32 {
+            match (right_id, left_id) {
+                (3, 2) => -4000, // を → 書く
+                (3, 4) => -2000, // を → 欠く
+                _ => 0,
+            }
+        }
+    }
+
+    let mut dict = HashMapDict::new();
+    dict.add("てがみ", "手紙", 1, 1, 1000, POS_CONTENT);
+    dict.add("を", "を", 3, 3, 500, POS_FUNCTION);
+    dict.add("かく", "核", 1, 1, 3000, POS_CONTENT);
+    dict.add("かく", "書く", 2, 2, 5000, POS_CONTENT);
+    dict.add("かく", "欠く", 4, 4, 4500, POS_CONTENT);
+
+    let input = "てがみをかく";
+    let mut lattice = Lattice::build(input, &dict);
+    let result = decode_nbest(&mut lattice, input, &TestConn, 5);
+
+    let kaku = result
+        .segments
+        .iter()
+        .find(|s| s.yomi == "かく")
+        .expect("「かく」セグメントがあるはず");
+    assert_eq!(
+        kaku.candidates,
+        vec!["書く", "欠く", "核"],
+        "文脈込みコスト順のはず"
+    );
+}
+
+#[test]
+fn test_nbest_candidates_dedupe_same_surface() {
+    // 同一表層で品詞違いのエントリが候補に重複して並ばないこと
+    // (コスト順で間に別表層が挟まると隣接 dedup では取れない)
+    let mut dict = HashMapDict::new();
+    dict.add("ほん", "本", 1, 1, 5000, POS_CONTENT);
+    dict.add("ほん", "ホン", 2, 2, 5500, POS_CONTENT);
+    dict.add("ほん", "保温", 3, 3, 5700, POS_CONTENT);
+    dict.add("ほん", "ホン", 4, 4, 6000, POS_CONTENT); // 別品詞の同一表層
+
+    let input = "ほん";
+    let mut lattice = Lattice::build(input, &dict);
+    let result = decode_nbest(&mut lattice, input, &SimpleConnectionCost, 5);
+
+    let candidates = &result.segments[0].candidates;
+    let hon_count = candidates.iter().filter(|c| c.as_str() == "ホン").count();
+    assert_eq!(hon_count, 1, "「ホン」は1回だけのはず: {candidates:?}");
+}
+
+#[test]
 fn test_clauses_kyouha() {
     // 「きょうは」→ 単語: [今日, は] → 文節: [今日は]
     let dict = HashMapDict::test_dict();
