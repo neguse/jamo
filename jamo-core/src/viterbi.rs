@@ -266,6 +266,34 @@ pub fn decode_nbest(
     ConvertResult { segments, clauses }
 }
 
+/// ひらがなをカタカナに変換 (ひらがな以外はそのまま)
+fn hiragana_to_katakana(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            let cp = c as u32;
+            // ひらがな (U+3041..U+3096) → カタカナ (U+30A1..U+30F6)
+            if (0x3041..=0x3096).contains(&cp) {
+                char::from_u32(cp + 0x60).unwrap_or(c)
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+/// 文節候補の末尾に読みのひらがな/カタカナを重複なしで追加する
+/// (辞書にない語でもかな表記を候補から選べるようにする)
+fn push_kana_fallbacks(candidates: &mut Vec<String>, yomi: &str) {
+    let hira = yomi.to_string();
+    if !candidates.contains(&hira) {
+        candidates.push(hira);
+    }
+    let kata = hiragana_to_katakana(yomi);
+    if !candidates.contains(&kata) {
+        candidates.push(kata);
+    }
+}
+
 /// 単語セグメントを文節にグルーピングする
 /// 自立語 (POS_CONTENT) が来たら新しい文節を開始
 /// 付属語 (POS_FUNCTION) は直前の文節に付く
@@ -318,6 +346,7 @@ pub fn group_clauses(segments: &[Segment]) -> Vec<Clause> {
                     }
                 }
             }
+            push_kana_fallbacks(&mut candidates, &yomi);
 
             Clause {
                 surface,
@@ -430,15 +459,28 @@ pub fn try_convert_with_boundaries(
             .collect();
         let yomi = sub_input.to_string();
 
-        // 文節候補: 内部文節の組み合わせから生成
+        // 文節候補: 内部文節1つを代替候補に置換した全スパンのバリエーションを生成
         let mut candidates = vec![surface.clone()];
-        for clause in &sub_result.clauses {
+        for (pos, clause) in sub_result.clauses.iter().enumerate() {
             for alt in clause.candidates.iter().skip(1) {
-                if !candidates.contains(alt) {
-                    candidates.push(alt.clone());
+                let variant: String = sub_result
+                    .clauses
+                    .iter()
+                    .enumerate()
+                    .map(|(j, c)| {
+                        if j == pos {
+                            alt.as_str()
+                        } else {
+                            c.surface.as_str()
+                        }
+                    })
+                    .collect();
+                if !candidates.contains(&variant) {
+                    candidates.push(variant);
                 }
             }
         }
+        push_kana_fallbacks(&mut candidates, sub_input);
 
         // セグメントの yomi をオフセット調整 (元の入力での位置に)
         let mut seg_start = start;

@@ -313,6 +313,85 @@ fn test_clauses_candidates() {
 }
 
 #[test]
+fn test_clauses_kana_fallback_candidates() {
+    // 文節候補には読みのひらがな/カタカナが常に含まれる (辞書にない語の救済)
+    let dict = HashMapDict::test_dict();
+    let mut lattice = Lattice::build("きょうは", &dict);
+    let result = decode_nbest(&mut lattice, "きょうは", &SimpleConnectionCost, 5);
+
+    assert_eq!(result.clauses.len(), 1);
+    let candidates = &result.clauses[0].candidates;
+    assert!(
+        candidates.contains(&"きょうは".to_string()),
+        "ひらがな候補があるはず: {candidates:?}"
+    );
+    assert!(
+        candidates.contains(&"キョウハ".to_string()),
+        "カタカナ候補があるはず: {candidates:?}"
+    );
+}
+
+#[test]
+fn test_clauses_kana_fallback_no_duplicates() {
+    // 表層が読みと同じ文節 (です) でもひらがな候補が重複しないこと
+    let dict = HashMapDict::test_dict();
+    let mut lattice = Lattice::build("です", &dict);
+    let result = decode_nbest(&mut lattice, "です", &SimpleConnectionCost, 5);
+
+    assert_eq!(result.clauses.len(), 1);
+    let candidates = &result.clauses[0].candidates;
+    let count = candidates.iter().filter(|c| c.as_str() == "です").count();
+    assert_eq!(count, 1, "「です」は1回だけのはず: {candidates:?}");
+}
+
+#[test]
+fn test_convert_with_boundaries_kana_fallback() {
+    // 境界指定変換でも文節候補にかなフォールバックが含まれる
+    let dict = HashMapDict::test_dict();
+    let input = "きょうは";
+    let boundaries = vec![9, 12];
+    let result = convert_with_boundaries(input, &boundaries, &dict, &SimpleConnectionCost, 5);
+
+    assert_eq!(result.clauses.len(), 2);
+    let candidates = &result.clauses[0].candidates;
+    assert!(
+        candidates.contains(&"きょう".to_string()),
+        "ひらがな候補があるはず: {candidates:?}"
+    );
+    assert!(
+        candidates.contains(&"キョウ".to_string()),
+        "カタカナ候補があるはず: {candidates:?}"
+    );
+}
+
+#[test]
+fn test_convert_with_boundaries_full_span_candidates() {
+    // 複数の内部文節を含む境界区間では、候補は部分スパンの文字列ではなく
+    // 区間全体を置換した形で並ぶ (部分候補を選ぶと残りが消えるバグの回帰テスト)
+    let dict = HashMapDict::test_dict();
+    let input = "きょうはてんき";
+    let boundaries = vec![input.len()];
+    let result = convert_with_boundaries(input, &boundaries, &dict, &SimpleConnectionCost, 5);
+
+    assert_eq!(result.clauses.len(), 1);
+    // SimpleConnectionCost では「てんき」→「天」+「木」が最良
+    assert_eq!(result.clauses[0].surface, "今日は天木");
+    let candidates = &result.clauses[0].candidates;
+    assert!(
+        candidates.contains(&"京は天木".to_string()),
+        "全スパン置換の候補があるはず: {candidates:?}"
+    );
+    assert!(
+        candidates.contains(&"今日は天気".to_string()),
+        "内部文節の代替も全スパン形のはず: {candidates:?}"
+    );
+    assert!(
+        !candidates.iter().any(|c| c == "京は"),
+        "部分スパン候補が混入しないはず: {candidates:?}"
+    );
+}
+
+#[test]
 fn test_clauses_single_content() {
     // 自立語1つだけの場合は1文節
     let dict = HashMapDict::test_dict();
