@@ -88,6 +88,19 @@ cd jamo-core
 wasm-pack build --target web --features wasm
 ```
 
+## 辞書 (mozc dictionary_oss 推奨)
+
+```bash
+# mozc 辞書データを取得してバイナリ構築 (Top-1 89.3% / Top-5 98.2%)
+scripts/fetch-mozc.sh
+cargo run -p jamo-cli --release -- dict build --dict data/mozc -o data/mozc.dict
+```
+
+辞書ディレクトリに `id.def` があれば mozc 形式、なければ IPAdic CSV として自動判別する。
+mozc 辞書データのライセンスは IPAdic license + BSD-3-Clause (mozc) + Okinawa dictionary
+license (詳細は取得される `data/mozc/README.txt`)。辞書バイナリを配布する場合は
+これらの帰属表示を同梱すること。
+
 ## C API
 
 ```bash

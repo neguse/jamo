@@ -4,3 +4,4 @@
 jamo-core/pkg/
 jamo-worker/node_modules/
 jamo-worker/dist/
+/data/mozc/

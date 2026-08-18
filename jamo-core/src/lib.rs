@@ -12,6 +12,7 @@ pub mod ipadic;
 pub mod lattice;
 pub mod learning;
 pub mod louds;
+pub mod mozc;
 pub mod romaji;
 pub mod session;
 pub mod viterbi;

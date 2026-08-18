@@ -8,15 +8,15 @@ use crate::dict::{Dictionary, Entry};
 use crate::louds::LoudsTrie;
 use crate::viterbi::ConnectionCost;
 
-/// IPAdic CSV からパースしたエントリ
+/// 辞書ソース (IPAdic CSV / mozc TSV) からパースしたエントリ
 #[derive(Debug)]
-struct RawEntry {
-    surface: String,
-    left_id: u16,
-    right_id: u16,
-    cost: i16,
-    reading: String,
-    pos_type: u8,
+pub(crate) struct RawEntry {
+    pub(crate) surface: String,
+    pub(crate) left_id: u16,
+    pub(crate) right_id: u16,
+    pub(crate) cost: i16,
+    pub(crate) reading: String,
+    pub(crate) pos_type: u8,
 }
 
 /// IPAdic から構築した辞書
@@ -428,7 +428,7 @@ fn parse_csv_dir(dir: &Path, entries: &mut Vec<RawEntry>) -> Result<(), String> 
 }
 
 /// RawEntry群からIPaDictを構築
-fn build_from_entries(
+pub(crate) fn build_from_entries(
     raw_entries: Vec<RawEntry>,
     matrix: Vec<i16>,
     num_pos: usize,
@@ -481,8 +481,8 @@ fn katakana_to_hiragana(s: &str) -> String {
         .collect()
 }
 
-/// IPAdic の品詞フィールドから品詞タイプを判定
-fn classify_pos(pos: &str, pos_sub: &str) -> u8 {
+/// 品詞フィールド (IPAdic / mozc id.def 共通の素性形式) から品詞タイプを判定
+pub(crate) fn classify_pos(pos: &str, pos_sub: &str) -> u8 {
     use crate::dict::{POS_CONTENT, POS_FUNCTION};
     match pos {
         "助詞" | "助動詞" => POS_FUNCTION,

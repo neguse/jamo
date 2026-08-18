@@ -331,3 +331,18 @@
     - ストアはエンジン単位 (C API)。複数セッションで学習を共有し、永続化パスはホストが与える
     - 線形走査の Vec 実装 (容量1024で µs オーダー、HashMap+順序管理の複雑さに見合わない)
 - 残課題: serve (HTTP/DO) への学習配線は別タスク (PRD の /commit)。jamo-ime (Windows) は IPC サーバー側への配線が必要
+
+### T132 mozc 辞書ソース対応 ✓ (2026-08-18)
+- やったこと:
+    - jamo-core/src/mozc.rs 新設: mozc dictionary_oss (dictionary*.txt + id.def + connection_single_column.txt) を IpaDict としてロード。既存のバイナリ形式・エンジンは無変更
+    - jamo-cli: 辞書ディレクトリに id.def があれば mozc 形式と自動判別 (dict build / 実行時ロード共通)。デフォルト探索パスに data/mozc(.dict) を追加し IPAdic より優先
+    - scripts/fetch-mozc.sh: mozc データ13ファイルのダウンロードスクリプト (README.txt = ライセンス文書込み)
+    - accuracy_test: カタカナ語ガード4文を追加 (計56文)、mozc 辞書用の精度テスト (Top-1≥80% / Top-5≥90%) を追加
+    - 実測: mozc Top-1 89.3% / Top-5 98.2% (IPAdic 51.8% / 80.4%)。辞書 79.7MB、ロード 0.20s
+- 変更したファイル: jamo-core/src/mozc.rs (新規), jamo-core/src/ipadic.rs, jamo-core/src/lib.rs, jamo-cli/src/main.rs, jamo-core/tests/accuracy_test.rs, scripts/fetch-mozc.sh (新規), .gitignore, README.md, doc/tasks.md, doc/current.md, doc/done.md
+- よかったこと: id.def の品詞素性が IPAdic 互換形式だったため classify_pos とバイナリ形式をそのまま流用でき、ローダー追加だけで済んだ。スクラッチパッドでの事前実験が部分移植の全滅を早期に示し、実装前に方針を確定できた
+- 判断:
+    - 当初案の「頻度リストで unigram 再推定」から方針変更 (ask #38/#39 でユーザー承認)。実測により、単語コスト・品詞ID・接続行列は分離不能で、コストのみ移植 12.5%、ブレンド 41.1%、順位のみ移植も文節分割が歪むことを確認。三位一体の丸ごと採用が唯一機能した
+    - IPAdic ビルドパスは維持 (naist-jdic 対応 T090 とも整合)
+    - 辞書バイナリはコミットしない (gitignore 済み、fetch スクリプトで再現可能)
+- 残課題: 組み込み向け軽量ビルド (低頻度語削減で 79.7MB を縮める)。lite-dm2x payload の辞書差し替え。単独短語 (かく→各 等) は学習で対処

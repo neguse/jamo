@@ -34,7 +34,9 @@ fn print_usage() {
     eprintln!("  convert [--dict DIR] <text>   かな漢字変換");
     eprintln!("  serve [--dict DIR] [--port N]  HTTPサーバー起動");
     eprintln!("  serve --ime [--dict DIR]       IME IPCサーバー起動");
-    eprintln!("  dict build [--dict DIR] -o <output>  辞書バイナリ構築");
+    eprintln!(
+        "  dict build [--dict DIR] -o <output>  辞書バイナリ構築 (DIR に id.def があれば mozc 形式)"
+    );
     eprintln!("  dict merge --base <dir> --extra <path>... -o <output>  辞書マージ");
 }
 
@@ -55,6 +57,17 @@ fn parse_dict_arg(args: &[String]) -> (Option<String>, Vec<String>) {
     (dict_path, rest)
 }
 
+/// 辞書ソースディレクトリをロードする (id.def があれば mozc、なければ IPAdic CSV)
+fn load_source_dir(dir: &Path) -> IpaDict {
+    if dir.join("id.def").exists() {
+        eprintln!("Loading mozc dictionary from {}...", dir.display());
+        jamo_core::mozc::load_mozc(dir).expect("failed to load mozc dictionary")
+    } else {
+        eprintln!("Loading IPAdic from {}...", dir.display());
+        IpaDict::load(dir).expect("failed to load IPAdic")
+    }
+}
+
 fn load_dict(dict_path: Option<&str>) -> Arc<IpaDict> {
     let start = Instant::now();
 
@@ -67,14 +80,18 @@ fn load_dict(dict_path: Option<&str>) -> Arc<IpaDict> {
             eprintln!("Loaded in {:.2}s", start.elapsed().as_secs_f64());
             return Arc::new(dict);
         }
-        eprintln!("Loading IPAdic from {path}...");
-        let dict = Arc::new(IpaDict::load(Path::new(path)).expect("failed to load IPAdic"));
+        let dict = Arc::new(load_source_dir(Path::new(path)));
         eprintln!("Loaded in {:.2}s", start.elapsed().as_secs_f64());
         return dict;
     }
 
-    // デフォルトパスを試す (バイナリ優先)
-    let bin_candidates = ["data/ipadic.dict", "../data/ipadic.dict"];
+    // デフォルトパスを試す (バイナリ優先、mozc 辞書があればそちらを優先)
+    let bin_candidates = [
+        "data/mozc.dict",
+        "../data/mozc.dict",
+        "data/ipadic.dict",
+        "../data/ipadic.dict",
+    ];
     for p in bin_candidates {
         if Path::new(p).exists() {
             eprintln!("Loading binary dict from {p}...");
@@ -84,11 +101,10 @@ fn load_dict(dict_path: Option<&str>) -> Arc<IpaDict> {
         }
     }
 
-    let candidates = ["data/ipadic", "../data/ipadic"];
+    let candidates = ["data/mozc", "../data/mozc", "data/ipadic", "../data/ipadic"];
     for p in candidates {
         if Path::new(p).exists() {
-            eprintln!("Loading IPAdic from {p}...");
-            let dict = Arc::new(IpaDict::load(Path::new(p)).expect("failed to load IPAdic"));
+            let dict = Arc::new(load_source_dir(Path::new(p)));
             eprintln!("Loaded in {:.2}s", start.elapsed().as_secs_f64());
             return dict;
         }
@@ -252,10 +268,9 @@ fn cmd_dict_build(args: &[String]) {
 
     let start = Instant::now();
 
-    // CSV ロード
+    // ソースロード (mozc / IPAdic 自動判別)
     let dict_dir = dict_path.as_deref().unwrap_or("data/ipadic");
-    eprintln!("Loading IPAdic from {dict_dir}...");
-    let dict = IpaDict::load(Path::new(dict_dir)).expect("failed to load IPAdic");
+    let dict = load_source_dir(Path::new(dict_dir));
     let load_time = start.elapsed();
 
     eprintln!(

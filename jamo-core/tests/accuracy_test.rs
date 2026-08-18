@@ -16,6 +16,7 @@ enum Category {
     Complex,
     ShortVerb,
     ShortNoun,
+    Katakana,
 }
 
 /// テストケース
@@ -297,6 +298,27 @@ fn test_corpus() -> Vec<TestCase> {
             expected: "病院",
             category: Category::ShortNoun,
         },
+        // カタカナ語 (正当なカタカナ表層が壊れないことのガード)
+        TestCase {
+            input: "こーひーをのむ",
+            expected: "コーヒーを飲む",
+            category: Category::Katakana,
+        },
+        TestCase {
+            input: "てれびをみる",
+            expected: "テレビを見る",
+            category: Category::Katakana,
+        },
+        TestCase {
+            input: "かめらをかう",
+            expected: "カメラを買う",
+            category: Category::Katakana,
+        },
+        TestCase {
+            input: "にゅーすをみる",
+            expected: "ニュースを見る",
+            category: Category::Katakana,
+        },
     ]
 }
 
@@ -316,6 +338,71 @@ fn load_ipadic() -> Option<jamo_core::ipadic::IpaDict> {
         }
     }
     None
+}
+
+fn load_mozc_dict() -> Option<jamo_core::ipadic::IpaDict> {
+    for p in ["../data/mozc.dict", "data/mozc.dict"] {
+        let path = Path::new(p);
+        if path.exists() {
+            return jamo_core::ipadic::IpaDict::load_binary(path).ok();
+        }
+    }
+    for p in ["../data/mozc", "data/mozc"] {
+        let path = Path::new(p);
+        if path.join("id.def").exists() {
+            return jamo_core::mozc::load_mozc(path).ok();
+        }
+    }
+    None
+}
+
+/// mozc 辞書での精度 (辞書がなければ skip)
+#[test]
+fn test_accuracy_mozc() {
+    let dict = match load_mozc_dict() {
+        Some(d) => d,
+        None => {
+            eprintln!("Skipping mozc accuracy test: data/mozc not found");
+            return;
+        }
+    };
+
+    let corpus = test_corpus();
+    let total = corpus.len();
+    let mut top1 = 0;
+    let mut top5 = 0;
+    let mut failures = Vec::new();
+
+    for tc in &corpus {
+        let result = jamo_core::convert_nbest(tc.input, &dict, &dict, 5);
+        let actual: String = result.segments.iter().map(|s| s.surface.as_str()).collect();
+        if actual == tc.expected {
+            top1 += 1;
+        } else {
+            failures.push((tc.input, tc.expected, actual));
+        }
+        if reachable_with_candidates(&result.clauses, tc.expected, 5) {
+            top5 += 1;
+        }
+    }
+
+    let top1_rate = top1 as f64 / total as f64 * 100.0;
+    let top5_rate = top5 as f64 / total as f64 * 100.0;
+    eprintln!("\n=== mozc 辞書精度 ===");
+    eprintln!("Top-1: {top1}/{total} ({top1_rate:.1}%)");
+    eprintln!("Top-5: {top5}/{total} ({top5_rate:.1}%)");
+    for (input, expected, actual) in &failures {
+        eprintln!("  {input} → {actual} (期待: {expected})");
+    }
+
+    assert!(
+        top1_rate >= 80.0,
+        "mozc Top-1 {top1_rate:.1}% が最低80%を下回っている (回帰)"
+    );
+    assert!(
+        top5_rate >= 90.0,
+        "mozc Top-5 {top5_rate:.1}% が最低90%を下回っている (回帰)"
+    );
 }
 
 #[test]
@@ -347,6 +434,7 @@ fn test_accuracy_baseline() {
         Category::Complex,
         Category::ShortVerb,
         Category::ShortNoun,
+        Category::Katakana,
     ];
     let mut cat_total: Vec<usize> = vec![0; categories.len()];
     let mut cat_match: Vec<usize> = vec![0; categories.len()];
