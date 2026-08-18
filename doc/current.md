@@ -2,7 +2,7 @@
 
 ## バージョン
 
-**v1.0.0** (2026-02-24)
+**v2.0.0** (2026-08-18) — C API をセッション型に刷新 (破壊的変更)。エンジン・辞書は v1 と互換。
 
 ## イテレーション進捗
 
@@ -14,7 +14,7 @@
 | 3 | 完了 | 運用 |
 | 4 | 完了 | 品質→1.0 |
 | 5 | 進行中 | Windows IME |
-| 8 | 進行中 | 変換精度・C API v2 (T130, T131 完了) |
+| 8 | 進行中 | 変換精度・C API v2 (T130, T131, T133 完了) |
 
 ## Iter 5: Windows IME
 
@@ -80,16 +80,22 @@ Top-5 到達率 (各文節の上位5候補から選んで正解に到達でき�
 (ホン 3692 vs 本 5947)、IPAdic 単語コストが変換用途向けでない (核 3422 vs 書く 7325)。
 対処は doc/tasks.md Iter 8 の T131 (フォールバック候補)・T132 (単語コスト再推定)。
 
-## 組み込み C API
+## 組み込み C API (v2: セッション型)
 
-単一プロセス組み込み (DM250 / lite-dm2x 等) 向けに capi.rs で公開:
-`jamo_convert` / `jamo_predict` に加え、文節伸縮 `jamo_resize` と
-ローマ字変換器 `jamo_romaji_*` (new/free/feed/backspace/flush/pending/reset)。
-ヘッダは cbindgen 生成 (include/jamo.h)。
+単一プロセス組み込み (DM250 / lite-dm2x 等) 向けに capi.rs で公開。
+v2 で JSON 返しのステートレス API (jamo_convert/jamo_resize/jamo_predict/
+jamo_romaji_*) を廃止し、セッションハンドル + アクセサに刷新:
+`jamo_session_*` (new/free/feed/input/backspace/preedit/focused_range/
+convert/clause_count/clause_yomi/candidate_count/candidate/selected/select/
+focus/set_focus/resize/revert/commit/reset)。
+状態機械は jamo-core/src/session.rs (プラットフォーム非依存、キーイベント
+処理は含まない)。返却文字列は次の呼び出しまで有効で解放不要。
+ヘッダは cbindgen 生成 (include/jamo.h)。lite-dm2x 側の追随
+(api_jamo.c / ime.lua / abi_smoke.c) は未着手。
 
 ## テスト
 
-全152テスト通過 (2026-08-18 実測、cargo test)
+全168テスト通過 (2026-08-18 実測、cargo test)
 
 ## プロジェクト構成
 

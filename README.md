@@ -97,10 +97,14 @@ cargo build --release -p jamo-core
 # ヘッダ生成
 cbindgen --config jamo-core/cbindgen.toml -o include/jamo.h jamo-core
 
-# 使用例
+# 使用例 (v2: セッション型。返却文字列は次の呼び出しまで有効、解放不要)
 # jamo_engine_t* engine = jamo_engine_open("data/ipadic.dict");
-# char* result = jamo_convert(engine, "きょう", 5);
-# jamo_string_free(result);
+# jamo_session_t* s = jamo_session_new(engine);
+# jamo_session_input(s, "kyouha");
+# jamo_session_convert(s, 5);
+# const char* c0 = jamo_session_candidate(s, 0, 0);
+# const char* text = jamo_session_commit(s);
+# jamo_session_free(s);
 # jamo_engine_free(engine);
 ```
 

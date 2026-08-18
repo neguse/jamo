@@ -355,34 +355,47 @@ IMEフロントエンドとの連携では、キーストロークごとに変�
 
 ## C API (cbindgen自動生成)
 
-組み込み・デスクトップ用途向け。Rustの `#[no_mangle] pub extern "C" fn` から cbindgen でヘッダを自動生成する。
+組み込み・デスクトップ用途向け (v2: セッション型)。Rust の `#[unsafe(no_mangle)] pub extern "C" fn` から cbindgen でヘッダを自動生成する。
+
+呼び出し側に JSON パーサ・状態管理を要求しない。文字列を返す関数の返値は
+同じセッションへの次の呼び出しまで有効で、呼び出し側での解放は不要。
+キーイベント処理は含まない (キーバインド方針はホスト側の責務)。
 
 ```c
-/* jamo.h - cbindgenにより自動生成 */
-typedef struct JamoCtx JamoCtx;
+/* jamo.h - cbindgenにより自動生成 (抜粋) */
+typedef struct jamo_engine_t jamo_engine_t;
+typedef struct jamo_session_t jamo_session_t;
 
-/* ライフサイクル */
-JamoCtx *jamo_open(const char *dict_path);
-void     jamo_close(JamoCtx *ctx);
+/* エンジン (辞書) */
+jamo_engine_t *jamo_engine_open(const char *dict_path);
+void           jamo_engine_free(jamo_engine_t *engine);
 
-/* 変換 */
-int32_t jamo_convert(JamoCtx *ctx,
-                     const char *yomi,
-                     char *out, size_t out_len,
-                     int32_t n_best);
-
-/* 文節操作 */
-int32_t jamo_resize_clause(JamoCtx *ctx, int32_t clause_idx, int32_t delta);
-
-/* 候補確定（学習） */
-void jamo_commit(JamoCtx *ctx, int32_t candidate_index);
-
-/* ユーザー辞書 */
-int32_t jamo_dict_add(JamoCtx *ctx,
-                      const char *yomi, const char *surface,
-                      const char *pos, int32_t cost);
-int32_t jamo_dict_remove(JamoCtx *ctx, const char *surface);
+/* セッション: 入力 → 変換 → 候補選択 → 確定 */
+jamo_session_t *jamo_session_new(const jamo_engine_t *engine);
+void            jamo_session_free(jamo_session_t *s);
+int32_t         jamo_session_state(const jamo_session_t *s);   /* JAMO_STATE_* */
+int32_t         jamo_session_feed(jamo_session_t *s, uint32_t ch);  /* ローマ字/かな1文字 */
+int32_t         jamo_session_input(jamo_session_t *s, const char *text);
+int32_t         jamo_session_backspace(jamo_session_t *s);
+const char     *jamo_session_preedit(jamo_session_t *s);
+int32_t         jamo_session_focused_range(const jamo_session_t *s,
+                                           uint32_t *from, uint32_t *len);
+int32_t         jamo_session_convert(jamo_session_t *s, uint32_t n);
+int32_t         jamo_session_clause_count(const jamo_session_t *s);
+const char     *jamo_session_clause_yomi(jamo_session_t *s, uint32_t clause);
+int32_t         jamo_session_candidate_count(const jamo_session_t *s, uint32_t clause);
+const char     *jamo_session_candidate(jamo_session_t *s, uint32_t clause, uint32_t index);
+int32_t         jamo_session_selected(const jamo_session_t *s, uint32_t clause);
+int32_t         jamo_session_select(jamo_session_t *s, uint32_t clause, uint32_t index);
+int32_t         jamo_session_focus(const jamo_session_t *s);
+int32_t         jamo_session_set_focus(jamo_session_t *s, uint32_t clause);
+int32_t         jamo_session_resize(jamo_session_t *s, int32_t delta, uint32_t n);
+int32_t         jamo_session_revert(jamo_session_t *s);
+const char     *jamo_session_commit(jamo_session_t *s);   /* 確定 (将来: 学習更新) */
+void            jamo_session_reset(jamo_session_t *s);
 ```
+
+学習 (commit 時の LRU 更新) とユーザー辞書 API はこのセッション API の上に追加する。
 
 ## 辞書ビルドパイプライン
 

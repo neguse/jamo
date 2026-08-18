@@ -300,3 +300,19 @@
     - フォールバックは候補列の末尾 (最低優先)。カタカナ語の第1候補化は T132 (単語コスト再推定) の領分で、ここでは「必ず選べる」ことだけ保証する
     - カタカナ恒等表層へのペナルティ案は Iter 8 設計決定の通り却下済み (コーヒー/珈琲問題)
 - 残課題: 52文コーパスでは Top-5 到達率は不変 (78.8%)。効果は辞書にない語・カタカナ語入力時の UX で、コーパスにそのケースを足すのは T132 と同時に行う
+
+### T133 セッション型 C API v2 ✓ (2026-08-18)
+- やったこと:
+    - jamo-core/src/session.rs 新設: 入力→変換→候補選択→伸縮→確定の状態機械 (Session)。辞書は保持せず操作の引数で受け取る (状態とロジックの分離)。テスト16件
+    - capi.rs を全面書き換え: JSON 返しのステートレス API (jamo_convert/jamo_resize/jamo_predict/jamo_romaji_*/jamo_string_free) を廃止し、jamo_session_* (21関数) に刷新。文字列は セッション内バッファ返しで呼び出し側の解放不要
+    - エラーコード導入 (JAMO_OK/JAMO_ERR/JAMO_ERR_STATE/JAMO_ERR_INDEX/JAMO_ERR_RESIZE/JAMO_ERR_EMPTY)
+    - cbindgen.toml 更新 + jamo.h 再生成、README / PRD の C API 節を v2 に同期
+    - jamo-core を 2.0.0 に (破壊的変更のためメジャーバンプ)
+- 変更したファイル: jamo-core/src/session.rs (新規), jamo-core/src/capi.rs, jamo-core/src/lib.rs, jamo-core/cbindgen.toml, jamo-core/include/jamo.h, jamo-core/Cargo.toml, README.md, PRD.md, doc/current.md, doc/done.md, doc/tasks.md
+- よかったこと: lite-dm2x の ime.lua が自前実装していた状態管理 (state/kana/clauses/boundaries/focus/sel + 手書き JSON デコーダ75行) がセッションに丸ごと対応し、シム側の設計検証に使えた
+- 判断:
+    - モデル操作 API に徹し、キーイベント処理を入れない (キー方針は lite-dm2x の ime.lua、Windows の composition.rs などホスト側の責務)
+    - 返却文字列の寿命は「同じセッションへの次の呼び出しまで」。Lua バインディング (lua_pushstring が即コピー) とも C 呼び出し側とも相性が良く、malloc/free 往復を排除できる
+    - engine はセッション生成時に束縛 (毎回渡すより誤用しにくい)。寿命規約はヘッダの Safety に明記
+    - JSON API は残さない (CLAUDE.md: 互換 shim を作らない。HTTP/WASM は Rust API 直叩きで無関係)
+- 残課題: lite-dm2x 側の追随 (api_jamo.c / ime.lua / abi_smoke.c)。commit 学習 (T134) をセッションに載せる。jamo-ime (Windows) の composition.rs を core Session ベースに寄せる統合。capi.rs 607行 (YELLOW) の分割検討

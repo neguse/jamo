@@ -9,19 +9,44 @@
 #include <stdlib.h>
 
 /**
- * jamo_romaji_backspace の返値: 未確定ローマ字を1文字消した
+ * 成功
  */
-#define JAMO_BACKSPACE_PENDING 0
+#define JAMO_OK 0
 
 /**
- * jamo_romaji_backspace の返値: 未確定ローマ字が空。呼び出し側がひらがなを消すべき
+ * 引数不正 (NULL、不正 UTF-8 など)
  */
-#define JAMO_BACKSPACE_HIRAGANA 1
+#define JAMO_ERR -1
 
 /**
- * jamo_romaji_backspace の返値: 消すものがない
+ * この状態では実行できない操作 (変換中の feed など)
  */
-#define JAMO_BACKSPACE_EMPTY 2
+#define JAMO_ERR_STATE -2
+
+/**
+ * 文節/候補インデックスが範囲外
+ */
+#define JAMO_ERR_INDEX -3
+
+/**
+ * 伸縮できない (端の文節など)
+ */
+#define JAMO_ERR_RESIZE -4
+
+/**
+ * 入力が空
+ */
+#define JAMO_ERR_EMPTY -5
+
+/**
+ * jamo_session_state の返値: かな入力中
+ */
+#define JAMO_STATE_INPUT 0
+
+/**
+ * jamo_session_state の返値: 変換中
+ */
+#define JAMO_STATE_CONVERTING 1
 
 /**
  * 品詞タイプ: 自立語 (文節の先頭になれる)
@@ -39,9 +64,9 @@
 typedef struct jamo_engine_t jamo_engine_t;
 
 /**
- * 不透明なローマ字変換器ハンドル
+ * 不透明なセッションハンドル
  */
-typedef struct jamo_romaji_t jamo_romaji_t;
+typedef struct jamo_session_t jamo_session_t;
 
 /**
  * バイナリ辞書ファイルからエンジンを生成
@@ -59,121 +84,190 @@ struct jamo_engine_t *jamo_engine_open(const char *dict_path);
  *
  * # Safety
  * `engine` は `jamo_engine_open` が返した有効なポインタ、または NULL であること。
+ * これを参照するセッションを先に解放すること。
  */
 void jamo_engine_free(struct jamo_engine_t *engine);
 
 /**
- * かな漢字変換
+ * セッションを生成
  *
- * JSON 文字列を返す。呼び出し側は `jamo_string_free` で解放すること。
- * 失敗時は NULL を返す。
- *
- * # Safety
- * `engine` は有効なエンジンポインタ、`input` は有効なヌル終端 UTF-8 文字列を指すこと。
- */
-char *jamo_convert(const struct jamo_engine_t *engine,
-                   const char *input,
-                   uint32_t n);
-
-/**
- * 文節伸縮
- *
- * `boundaries` は `jamo_convert` が返す boundaries と同じ、カンマ区切りの
- * 文節境界バイト位置。`clause_idx` の文節を `delta` 文字分伸縮 (+で伸ばす、
- * -で縮める) し、新しい境界で再変換した結果を `jamo_convert` と同じ JSON で返す。
- * 不正な操作・引数の場合は NULL を返す。
+ * 呼び出し側は使用後に `jamo_session_free` で解放すること。
  *
  * # Safety
- * `engine` は有効なエンジンポインタ、`input` と `boundaries` は有効な
- * ヌル終端 UTF-8 文字列を指すこと。
+ * `engine` は `jamo_engine_open` が返した有効なポインタで、
+ * セッションより長生きすること。
  */
-char *jamo_resize(const struct jamo_engine_t *engine,
-                  const char *input,
-                  const char *boundaries,
-                  uint32_t clause_idx,
-                  int32_t delta,
-                  uint32_t n);
+struct jamo_session_t *jamo_session_new(const struct jamo_engine_t *engine);
 
 /**
- * 予測変換
- *
- * JSON 文字列を返す。呼び出し側は `jamo_string_free` で解放すること。
+ * セッションを解放
  *
  * # Safety
- * `engine` は有効なエンジンポインタ、`prefix` は有効なヌル終端 UTF-8 文字列を指すこと。
+ * `session` は `jamo_session_new` が返した有効なポインタ、または NULL であること。
  */
-char *jamo_predict(const struct jamo_engine_t *engine,
-                   const char *prefix,
-                   uint32_t limit);
+void jamo_session_free(struct jamo_session_t *session);
 
 /**
- * C API が返した文字列を解放
+ * 全状態を破棄して初期状態に戻す
  *
  * # Safety
- * `s` は `jamo_convert` / `jamo_predict` が返したポインタ、または NULL であること。
+ * `session` は有効なセッションポインタであること。
  */
-void jamo_string_free(char *s);
+void jamo_session_reset(struct jamo_session_t *session);
 
 /**
- * ローマ字変換器を生成
- *
- * 呼び出し側は使用後に `jamo_romaji_free` で解放すること。
- */
-struct jamo_romaji_t *jamo_romaji_new(void);
-
-/**
- * ローマ字変換器を解放
+ * 現在の状態 (JAMO_STATE_*) を返す
  *
  * # Safety
- * `romaji` は `jamo_romaji_new` が返した有効なポインタ、または NULL であること。
+ * `session` は有効なセッションポインタであること。
  */
-void jamo_romaji_free(struct jamo_romaji_t *romaji);
+int32_t jamo_session_state(const struct jamo_session_t *session);
 
 /**
- * 1文字入力し、確定したひらがな (未確定なら空文字列) を返す
- *
- * `ch` は Unicode スカラ値。返値は `jamo_string_free` で解放すること。
- * 不正な引数の場合は NULL を返す。
+ * 1文字入力する (Unicode スカラ値)。ローマ字はひらがなに変換される。
  *
  * # Safety
- * `romaji` は `jamo_romaji_new` が返した有効なポインタであること。
+ * `session` は有効なセッションポインタであること。
  */
-char *jamo_romaji_feed(struct jamo_romaji_t *romaji, uint32_t ch);
+int32_t jamo_session_feed(struct jamo_session_t *session, uint32_t ch);
 
 /**
- * Backspace 処理。JAMO_BACKSPACE_* のいずれかを返す
+ * 文字列をまとめて入力する (UTF-8。ローマ字/かな混在可)
  *
  * # Safety
- * `romaji` は `jamo_romaji_new` が返した有効なポインタであること。
+ * `session` は有効なセッションポインタ、`text` は有効なヌル終端 UTF-8
+ * 文字列を指すこと。
  */
-int32_t jamo_romaji_backspace(struct jamo_romaji_t *romaji);
+int32_t jamo_session_input(struct jamo_session_t *session, const char *text);
 
 /**
- * 未確定ローマ字を強制確定し、確定分 ("n" → "ん"、なければ空文字列) を返す
- *
- * 返値は `jamo_string_free` で解放すること。
+ * Backspace。1文字消したら 1、消すものがなければ 0 を返す
+ * (0 のとき呼び出し側は通常の Backspace として扱う)。
  *
  * # Safety
- * `romaji` は `jamo_romaji_new` が返した有効なポインタであること。
+ * `session` は有効なセッションポインタであること。
  */
-char *jamo_romaji_flush(struct jamo_romaji_t *romaji);
+int32_t jamo_session_backspace(struct jamo_session_t *session);
 
 /**
- * 現在の未確定ローマ字のコピーを返す
- *
- * 返値は `jamo_string_free` で解放すること。
+ * preedit 表示文字列を返す。
+ * Input 中: かな+未確定ローマ字、Converting 中: 選択中候補の連結。
  *
  * # Safety
- * `romaji` は `jamo_romaji_new` が返した有効なポインタであること。
+ * `session` は有効なセッションポインタであること。
  */
-char *jamo_romaji_pending(const struct jamo_romaji_t *romaji);
+const char *jamo_session_preedit(struct jamo_session_t *session);
 
 /**
- * 未確定ローマ字を破棄する
+ * preedit 内のフォーカス範囲 (文字単位) を out パラメータで返す。
+ * Input 中はカーソル位置 (preedit 末尾, 長さ0)。
  *
  * # Safety
- * `romaji` は `jamo_romaji_new` が返した有効なポインタであること。
+ * `session` は有効なセッションポインタ、`from`/`len` は有効な書き込み先で
+ * あること。
  */
-void jamo_romaji_reset(struct jamo_romaji_t *romaji);
+int32_t jamo_session_focused_range(const struct jamo_session_t *session,
+                                   uint32_t *from,
+                                   uint32_t *len);
+
+/**
+ * かな漢字変換を実行して Converting に遷移する。
+ * `n` は文節ごとの候補数の上限の目安 (単語レベルの N-best 幅)。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_convert(struct jamo_session_t *session, uint32_t n);
+
+/**
+ * 文節数を返す (Input 中は 0)
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_clause_count(const struct jamo_session_t *session);
+
+/**
+ * 文節の読みを返す。範囲外は NULL。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+const char *jamo_session_clause_yomi(struct jamo_session_t *session, uint32_t clause);
+
+/**
+ * 文節の候補数を返す。範囲外は JAMO_ERR_INDEX。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_candidate_count(const struct jamo_session_t *session, uint32_t clause);
+
+/**
+ * 文節の候補を返す。範囲外は NULL。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+const char *jamo_session_candidate(struct jamo_session_t *session, uint32_t clause, uint32_t index);
+
+/**
+ * 文節の選択中候補インデックスを返す。範囲外は JAMO_ERR_INDEX。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_selected(const struct jamo_session_t *session, uint32_t clause);
+
+/**
+ * 文節の候補を選択する
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_select(struct jamo_session_t *session, uint32_t clause, uint32_t index);
+
+/**
+ * フォーカス中の文節インデックスを返す
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_focus(const struct jamo_session_t *session);
+
+/**
+ * フォーカスを移動する
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_set_focus(struct jamo_session_t *session, uint32_t clause);
+
+/**
+ * フォーカス文節を delta 文字分伸縮して再変換する (+で伸ばす、-で縮める)
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_resize(struct jamo_session_t *session,
+                            int32_t delta,
+                            uint32_t n);
+
+/**
+ * 変換を取り消して Input に戻る (かなは保持)
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_revert(struct jamo_session_t *session);
+
+/**
+ * 確定。確定文字列を返してセッションを初期状態に戻す。
+ * Input 中はかな (+未確定ローマ字の確定分) を返す。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+const char *jamo_session_commit(struct jamo_session_t *session);
 
 #endif  /* JAMO_H */
