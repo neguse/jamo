@@ -270,4 +270,23 @@ int32_t jamo_session_revert(struct jamo_session_t *session);
  */
 const char *jamo_session_commit(struct jamo_session_t *session);
 
+/**
+ * 学習データ (ユーザーデータ) をファイルへ保存する
+ *
+ * # Safety
+ * `engine` は有効なエンジンポインタ、`path` は有効なヌル終端 UTF-8
+ * 文字列を指すこと。
+ */
+int32_t jamo_engine_save_user_data(const struct jamo_engine_t *engine, const char *path);
+
+/**
+ * 学習データ (ユーザーデータ) をファイルから読み込む (既存の学習は置き換え)
+ *
+ * # Safety
+ * `engine` は有効なエンジンポインタ、`path` は有効なヌル終端 UTF-8
+ * 文字列を指すこと。
+ */
+int32_t jamo_engine_load_user_data(const struct jamo_engine_t *engine,
+                                   const char *path);
+
 #endif  /* JAMO_H */

@@ -14,7 +14,7 @@
 | 3 | 完了 | 運用 |
 | 4 | 完了 | 品質→1.0 |
 | 5 | 進行中 | Windows IME |
-| 8 | 進行中 | 変換精度・C API v2 (T130, T131, T133 完了) |
+| 8 | 進行中 | 変換精度・C API v2 (T130, T131, T133, T134 完了) |
 
 ## Iter 5: Windows IME
 
@@ -90,12 +90,15 @@ convert/clause_count/clause_yomi/candidate_count/candidate/selected/select/
 focus/set_focus/resize/revert/commit/reset)。
 状態機械は jamo-core/src/session.rs (プラットフォーム非依存、キーイベント
 処理は含まない)。返却文字列は次の呼び出しまで有効で解放不要。
+commit 学習 (learning.rs の読み→表層 LRU、エンジン単位で全セッション共有)
+を内蔵し、`jamo_engine_save_user_data` / `jamo_engine_load_user_data` で
+ホスト提供パス (DM250 は SD) に永続化できる。
 ヘッダは cbindgen 生成 (include/jamo.h)。lite-dm2x 側の追随
 (api_jamo.c / ime.lua / abi_smoke.c) は未着手。
 
 ## テスト
 
-全168テスト通過 (2026-08-18 実測、cargo test)
+全178テスト通過 (2026-08-18 実測、cargo test)
 
 ## プロジェクト構成
 

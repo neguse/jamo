@@ -11,11 +11,13 @@
 //! セッションはスレッド間で共有できない。engine はそれを参照する全セッション
 //! より長生きさせること。
 
+use std::cell::RefCell;
 use std::ffi::{CStr, CString, c_char};
 use std::path::Path;
 use std::ptr;
 
 use crate::ipadic::IpaDict;
+use crate::learning::LearningStore;
 use crate::session::{Session, SessionError, SessionState};
 
 /// 成功
@@ -48,6 +50,8 @@ fn error_code(e: SessionError) -> i32 {
 /// 不透明なエンジンハンドル
 pub struct JamoCEngine {
     dict: IpaDict,
+    /// 変換学習 (エンジン単位で全セッション共有)
+    learning: RefCell<LearningStore>,
 }
 
 /// バイナリ辞書ファイルからエンジンを生成
@@ -67,7 +71,10 @@ pub unsafe extern "C" fn jamo_engine_open(dict_path: *const c_char) -> *mut Jamo
         Err(_) => return ptr::null_mut(),
     };
     match IpaDict::load_binary(Path::new(path)) {
-        Ok(dict) => Box::into_raw(Box::new(JamoCEngine { dict })),
+        Ok(dict) => Box::into_raw(Box::new(JamoCEngine {
+            dict,
+            learning: RefCell::new(LearningStore::default()),
+        })),
         Err(_) => ptr::null_mut(),
     }
 }
@@ -273,7 +280,11 @@ pub unsafe extern "C" fn jamo_session_convert(session: *mut JamoCSession, n: u32
         return JAMO_ERR;
     };
     let engine = unsafe { &*s.engine };
-    match s.session.convert(&engine.dict, &engine.dict, n as usize) {
+    let learning = engine.learning.borrow();
+    match s
+        .session
+        .convert(&engine.dict, &engine.dict, n as usize, Some(&learning))
+    {
         Ok(()) => JAMO_OK,
         Err(e) => error_code(e),
     }
@@ -428,10 +439,13 @@ pub unsafe extern "C" fn jamo_session_resize(
         return JAMO_ERR;
     };
     let engine = unsafe { &*s.engine };
-    match s
-        .session
-        .resize(delta, &engine.dict, &engine.dict, n as usize)
-    {
+    match s.session.resize(
+        delta,
+        &engine.dict,
+        &engine.dict,
+        n as usize,
+        Some(&engine.learning.borrow()),
+    ) {
         Ok(()) => JAMO_OK,
         Err(e) => error_code(e),
     }
@@ -462,8 +476,62 @@ pub unsafe extern "C" fn jamo_session_commit(session: *mut JamoCSession) -> *con
     let Some(s) = (unsafe { session.as_mut() }) else {
         return ptr::null();
     };
-    let text = s.session.commit();
+    let engine = unsafe { &*s.engine };
+    let text = s.session.commit(Some(&mut engine.learning.borrow_mut()));
     s.scratch_str(text)
+}
+
+/// 学習データ (ユーザーデータ) をファイルへ保存する
+///
+/// # Safety
+/// `engine` は有効なエンジンポインタ、`path` は有効なヌル終端 UTF-8
+/// 文字列を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jamo_engine_save_user_data(
+    engine: *const JamoCEngine,
+    path: *const c_char,
+) -> i32 {
+    let Some(engine) = (unsafe { engine.as_ref() }) else {
+        return JAMO_ERR;
+    };
+    if path.is_null() {
+        return JAMO_ERR;
+    }
+    let Ok(path) = (unsafe { CStr::from_ptr(path) }).to_str() else {
+        return JAMO_ERR;
+    };
+    match engine.learning.borrow().save(Path::new(path)) {
+        Ok(()) => JAMO_OK,
+        Err(_) => JAMO_ERR,
+    }
+}
+
+/// 学習データ (ユーザーデータ) をファイルから読み込む (既存の学習は置き換え)
+///
+/// # Safety
+/// `engine` は有効なエンジンポインタ、`path` は有効なヌル終端 UTF-8
+/// 文字列を指すこと。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jamo_engine_load_user_data(
+    engine: *const JamoCEngine,
+    path: *const c_char,
+) -> i32 {
+    let Some(engine) = (unsafe { engine.as_ref() }) else {
+        return JAMO_ERR;
+    };
+    if path.is_null() {
+        return JAMO_ERR;
+    }
+    let Ok(path) = (unsafe { CStr::from_ptr(path) }).to_str() else {
+        return JAMO_ERR;
+    };
+    match LearningStore::load(Path::new(path)) {
+        Ok(store) => {
+            *engine.learning.borrow_mut() = store;
+            JAMO_OK
+        }
+        Err(_) => JAMO_ERR,
+    }
 }
 
 #[cfg(test)]
@@ -578,6 +646,46 @@ mod tests {
             assert_eq!(read_str(jamo_session_preedit(s)), "きょうはいいてんき");
 
             jamo_session_free(s);
+            jamo_engine_free(e);
+        }
+    }
+
+    #[test]
+    fn test_capi_learning_across_sessions() {
+        let Some(e) = open_test_engine() else { return };
+        unsafe {
+            // 1回目: 候補2を選んで確定
+            let s = jamo_session_new(e);
+            let input = cstr("kyouha");
+            jamo_session_input(s, input.as_ptr());
+            jamo_session_convert(s, 5);
+            if jamo_session_candidate_count(s, 0) < 2 {
+                jamo_session_free(s);
+                jamo_engine_free(e);
+                return;
+            }
+            jamo_session_select(s, 0, 1);
+            let picked = read_str(jamo_session_candidate(s, 0, 1));
+            let committed = read_str(jamo_session_commit(s));
+            assert!(committed.starts_with(&picked) || committed.contains(&picked));
+            jamo_session_free(s);
+
+            // 2回目: 学習により選んだ候補が先頭に来る
+            let s2 = jamo_session_new(e);
+            jamo_session_input(s2, input.as_ptr());
+            jamo_session_convert(s2, 5);
+            let top = read_str(jamo_session_candidate(s2, 0, 0));
+            assert_eq!(top, picked, "学習した候補が先頭のはず");
+
+            // 保存 → 読み込みのラウンドトリップ
+            let dir = std::env::temp_dir();
+            let path = dir.join(format!("jamo-capi-learning-{}.tsv", std::process::id()));
+            let cpath = cstr(path.to_str().unwrap());
+            assert_eq!(jamo_engine_save_user_data(e, cpath.as_ptr()), JAMO_OK);
+            assert_eq!(jamo_engine_load_user_data(e, cpath.as_ptr()), JAMO_OK);
+            std::fs::remove_file(&path).ok();
+
+            jamo_session_free(s2);
             jamo_engine_free(e);
         }
     }

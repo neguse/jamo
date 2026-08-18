@@ -10,6 +10,7 @@ pub mod bitvec;
 pub mod dict;
 pub mod ipadic;
 pub mod lattice;
+pub mod learning;
 pub mod louds;
 pub mod romaji;
 pub mod session;

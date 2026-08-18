@@ -316,3 +316,18 @@
     - engine はセッション生成時に束縛 (毎回渡すより誤用しにくい)。寿命規約はヘッダの Safety に明記
     - JSON API は残さない (CLAUDE.md: 互換 shim を作らない。HTTP/WASM は Rust API 直叩きで無関係)
 - 残課題: lite-dm2x 側の追随 (api_jamo.c / ime.lua / abi_smoke.c)。commit 学習 (T134) をセッションに載せる。jamo-ime (Windows) の composition.rs を core Session ベースに寄せる統合。capi.rs 607行 (YELLOW) の分割検討
+
+### T134 commit 学習 ✓ (2026-08-18)
+- やったこと:
+    - jamo-core/src/learning.rs 新設: 読み→確定表層の LRU (LearningStore、容量1024)。TSV でファイル永続化。テスト7件
+    - Session::convert/resize が Option<&LearningStore> を受け、学習済み表層を文節候補の先頭へ (候補になければ挿入)。commit(Option<&mut LearningStore>) で各文節の (読み→確定表層) を記録
+    - C API: エンジンが RefCell<LearningStore> を保持し全セッションで共有。jamo_session_convert/resize/commit に自動配線。jamo_engine_save_user_data / jamo_engine_load_user_data を追加しヘッダ再生成
+    - セッション学習テスト2件 + capi 学習フローのテスト1件 (別セッションへの学習反映と保存/読込)
+- 変更したファイル: jamo-core/src/learning.rs (新規), jamo-core/src/session.rs, jamo-core/src/capi.rs, jamo-core/src/lib.rs, jamo-core/include/jamo.h, doc/current.md, doc/done.md
+- よかったこと: Session が辞書非保持の設計だったので、学習も引数渡しで自然に入り core は入出力レスのまま保てた
+- 判断:
+    - 記録は確定した全文節 (選択変更の有無を問わず)。ユーザーが受け入れた変換は正例であり、LRU 上限があるので肥大しない
+    - 学習表層が候補にない場合も先頭に挿入する (この読みで過去に確定した文字列なので提示してよい)
+    - ストアはエンジン単位 (C API)。複数セッションで学習を共有し、永続化パスはホストが与える
+    - 線形走査の Vec 実装 (容量1024で µs オーダー、HashMap+順序管理の複雑さに見合わない)
+- 残課題: serve (HTTP/DO) への学習配線は別タスク (PRD の /commit)。jamo-ime (Windows) は IPC サーバー側への配線が必要

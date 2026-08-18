@@ -7,6 +7,7 @@
 //! 辞書・接続コストは保持せず、必要な操作の引数で受け取る (状態とロジックの分離)。
 
 use crate::dict::Dictionary;
+use crate::learning::LearningStore;
 use crate::romaji::{BackspaceResult, RomajiConverter};
 use crate::viterbi::{ConnectionCost, ConvertResult, clause_boundaries};
 
@@ -124,12 +125,14 @@ impl Session {
         (from, 0)
     }
 
-    /// かな漢字変換を実行して Converting に遷移する
+    /// かな漢字変換を実行して Converting に遷移する。
+    /// `learning` を渡すと学習済み表層が各文節候補の先頭に来る。
     pub fn convert(
         &mut self,
         dict: &dyn Dictionary,
         conn: &dyn ConnectionCost,
         n: usize,
+        learning: Option<&LearningStore>,
     ) -> Result<(), SessionError> {
         if self.state() == SessionState::Converting {
             return Err(SessionError::InvalidState);
@@ -139,7 +142,7 @@ impl Session {
             return Err(SessionError::EmptyInput);
         }
         let result = crate::convert_nbest(&self.kana, dict, conn, n);
-        self.apply_result(result);
+        self.apply_result(result, learning);
         self.focus = 0;
         Ok(())
     }
@@ -151,6 +154,7 @@ impl Session {
         dict: &dyn Dictionary,
         conn: &dyn ConnectionCost,
         n: usize,
+        learning: Option<&LearningStore>,
     ) -> Result<(), SessionError> {
         if self.state() != SessionState::Converting {
             return Err(SessionError::InvalidState);
@@ -161,20 +165,30 @@ impl Session {
         let result = crate::try_convert_with_boundaries(&self.kana, &new_boundaries, dict, conn, n)
             .map_err(|_| SessionError::InvalidResize)?;
         let focus = self.focus;
-        self.apply_result(result);
+        self.apply_result(result, learning);
         self.focus = focus.min(self.clauses.len().saturating_sub(1));
         Ok(())
     }
 
-    fn apply_result(&mut self, result: ConvertResult) {
+    fn apply_result(&mut self, result: ConvertResult, learning: Option<&LearningStore>) {
         self.boundaries = clause_boundaries(&result.clauses);
         self.clauses = result
             .clauses
             .into_iter()
-            .map(|c| SessionClause {
-                yomi: c.yomi,
-                candidates: c.candidates,
-                selected: 0,
+            .map(|c| {
+                let mut candidates = c.candidates;
+                if let Some(learned) = learning.and_then(|l| l.get(&c.yomi)) {
+                    // 学習済み表層を候補の先頭へ (なければ先頭に挿入)
+                    if let Some(pos) = candidates.iter().position(|s| s == learned) {
+                        candidates.remove(pos);
+                    }
+                    candidates.insert(0, learned.to_string());
+                }
+                SessionClause {
+                    yomi: c.yomi,
+                    candidates,
+                    selected: 0,
+                }
             })
             .collect();
     }
@@ -222,8 +236,14 @@ impl Session {
 
     /// 確定。確定文字列を返してセッションを初期状態に戻す。
     /// Input 中はかな (+未確定ローマ字の flush 分) を確定する。
-    pub fn commit(&mut self) -> String {
+    /// `learning` を渡すと変換中の各文節の (読み→確定表層) が記録される。
+    pub fn commit(&mut self, learning: Option<&mut LearningStore>) -> String {
         let text = if self.state() == SessionState::Converting {
+            if let Some(store) = learning {
+                for clause in &self.clauses {
+                    store.record(&clause.yomi, clause.text());
+                }
+            }
             self.preedit()
         } else {
             format!("{}{}", self.kana, self.romaji.flush())
@@ -271,7 +291,7 @@ mod tests {
         let dict = HashMapDict::test_dict();
         let mut s = Session::new();
         feed_str(&mut s, input);
-        s.convert(&dict, &SimpleConnectionCost, 5).unwrap();
+        s.convert(&dict, &SimpleConnectionCost, 5, None).unwrap();
         (s, dict)
     }
 
@@ -330,7 +350,7 @@ mod tests {
         let dict = HashMapDict::test_dict();
         let mut s = Session::new();
         feed_str(&mut s, "kyoun"); // "n" が pending に残る
-        s.convert(&dict, &SimpleConnectionCost, 5).unwrap();
+        s.convert(&dict, &SimpleConnectionCost, 5, None).unwrap();
         let all_yomi: String = s.clauses().iter().map(|c| c.yomi.as_str()).collect();
         assert_eq!(all_yomi, "きょうん"); // flush で「ん」が確定してから変換される
     }
@@ -340,7 +360,7 @@ mod tests {
         let dict = HashMapDict::test_dict();
         let mut s = Session::new();
         assert_eq!(
-            s.convert(&dict, &SimpleConnectionCost, 5),
+            s.convert(&dict, &SimpleConnectionCost, 5, None),
             Err(SessionError::EmptyInput)
         );
     }
@@ -377,7 +397,7 @@ mod tests {
     fn test_resize_extends_focused_clause() {
         // [今日は][天][木] の文節0を1文字伸ばす → 読み「きょうはて」
         let (mut s, dict) = converting_session("kyouhatenki");
-        s.resize(1, &dict, &SimpleConnectionCost, 5).unwrap();
+        s.resize(1, &dict, &SimpleConnectionCost, 5, None).unwrap();
         assert_eq!(s.clauses()[0].yomi, "きょうはて");
         assert_eq!(s.focus(), 0);
         // 全文節の読みを連結すると元のかなに戻る
@@ -390,7 +410,7 @@ mod tests {
         let (mut s, dict) = converting_session("kyouha");
         // 1文節のみ → 最後の文節は伸縮不可
         assert_eq!(
-            s.resize(1, &dict, &SimpleConnectionCost, 5),
+            s.resize(1, &dict, &SimpleConnectionCost, 5, None),
             Err(SessionError::InvalidResize)
         );
     }
@@ -406,7 +426,7 @@ mod tests {
     #[test]
     fn test_commit_converting_returns_selection_and_resets() {
         let (mut s, _dict) = converting_session("kyouha");
-        assert_eq!(s.commit(), "今日は");
+        assert_eq!(s.commit(None), "今日は");
         assert_eq!(s.state(), SessionState::Input);
         assert_eq!(s.preedit(), "");
     }
@@ -415,8 +435,42 @@ mod tests {
     fn test_commit_input_returns_kana_with_flush() {
         let mut s = Session::new();
         feed_str(&mut s, "kyoun"); // pending "n"
-        assert_eq!(s.commit(), "きょうん");
+        assert_eq!(s.commit(None), "きょうん");
         assert_eq!(s.preedit(), "");
+    }
+
+    #[test]
+    fn test_convert_applies_learning() {
+        let dict = HashMapDict::test_dict();
+        let mut store = LearningStore::new(16);
+        store.record("きょうは", "京は");
+        let mut s = Session::new();
+        feed_str(&mut s, "kyouha");
+        s.convert(&dict, &SimpleConnectionCost, 5, Some(&store))
+            .unwrap();
+        assert_eq!(s.clauses()[0].candidates[0], "京は");
+        assert_eq!(s.preedit(), "京は");
+    }
+
+    #[test]
+    fn test_commit_records_learning_and_next_convert_uses_it() {
+        let dict = HashMapDict::test_dict();
+        let mut store = LearningStore::new(16);
+        let (mut s, _dict) = converting_session("kyouha");
+        let idx = s.clauses()[0]
+            .candidates
+            .iter()
+            .position(|c| c == "京は")
+            .unwrap();
+        s.select(0, idx).unwrap();
+        s.commit(Some(&mut store));
+        assert_eq!(store.get("きょうは"), Some("京は"));
+
+        let mut s2 = Session::new();
+        feed_str(&mut s2, "kyouha");
+        s2.convert(&dict, &SimpleConnectionCost, 5, Some(&store))
+            .unwrap();
+        assert_eq!(s2.preedit(), "京は");
     }
 
     #[test]
