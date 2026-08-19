@@ -38,6 +38,7 @@ fn print_usage() {
         "  dict build [--dict DIR] -o <output>  辞書バイナリ構築 (DIR に id.def があれば mozc 形式)"
     );
     eprintln!("  dict merge --base <dir> --extra <path>... -o <output>  辞書マージ");
+    eprintln!("  dict info <dict>               辞書バイナリのセクション別内訳");
 }
 
 /// 引数から --dict DIR を抽出。残りの引数も返す。
@@ -170,11 +171,80 @@ fn cmd_dict(args: &[String]) {
     match args[0].as_str() {
         "build" => cmd_dict_build(&args[1..]),
         "merge" => cmd_dict_merge(&args[1..]),
+        "info" => cmd_dict_info(&args[1..]),
         _ => {
             eprintln!("Unknown dict subcommand: {}", args[0]);
             std::process::exit(1);
         }
     }
+}
+
+fn cmd_dict_info(args: &[String]) {
+    let Some(path) = args.first() else {
+        eprintln!("Usage: jamo dict info <dict>");
+        std::process::exit(1);
+    };
+    let data = std::fs::read(path).unwrap_or_else(|e| {
+        eprintln!("Error: {path}: {e}");
+        std::process::exit(1);
+    });
+    let s = jamo_core::dict_stats::dict_stats(&data).unwrap_or_else(|e| {
+        eprintln!("Error: {path}: {e}");
+        std::process::exit(1);
+    });
+
+    let total = s.total_bytes as f64;
+    let row = |name: &str, bytes: usize, note: String| {
+        println!(
+            "{name:<16} {:8.1} MB  {:5.1}%  {note}",
+            bytes as f64 / 1e6,
+            bytes as f64 / total * 100.0
+        );
+    };
+    println!("{path} (v{}, total {:.1} MB)", s.version, total / 1e6);
+    row(
+        "louds bitvec",
+        s.louds_bytes,
+        format!("{} bits", s.louds_bits),
+    );
+    row("labels", s.labels_bytes, format!("{} nodes", s.node_count));
+    row(
+        "terminal",
+        s.terminal_bytes,
+        format!(
+            "{} nodes, sentinel {:.1}%",
+            s.terminal_count,
+            s.sentinel_count as f64 / s.terminal_count.max(1) as f64 * 100.0
+        ),
+    );
+    row(
+        "entries",
+        s.entries_bytes,
+        format!("{} entries", s.entry_count),
+    );
+    row(
+        "  surface",
+        s.surface_bytes,
+        format!(
+            "uniq {} ({:.1} MB)",
+            s.surface_uniq_count,
+            s.surface_uniq_bytes as f64 / 1e6
+        ),
+    );
+    row(
+        "  fixed 9B",
+        s.entry_fixed_bytes,
+        "len + left/right/cost/pos_type".to_string(),
+    );
+    row(
+        "conn matrix",
+        s.matrix_bytes,
+        format!("num_pos {}", s.num_pos),
+    );
+    println!(
+        "stats: vocab {}, readings {}",
+        s.vocab_size, s.reading_count
+    );
 }
 
 fn cmd_dict_merge(args: &[String]) {

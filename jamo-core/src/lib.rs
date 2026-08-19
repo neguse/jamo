@@ -8,6 +8,7 @@ pub mod capi;
 
 pub mod bitvec;
 pub mod dict;
+pub mod dict_stats;
 pub mod ipadic;
 pub mod lattice;
 pub mod learning;

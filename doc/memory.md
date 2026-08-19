@@ -27,7 +27,7 @@ python3 scripts/bench-memory.py --with-anthy --with-mozc-server
 
 ## 辞書バイナリ内訳 (フォーマット v2)
 
-`scripts/dict-breakdown.py data/mozc.dict` (2026-08-19):
+`cargo run -p jamo-cli --release -- dict info data/mozc.dict` (2026-08-19):
 
 ```
 data/mozc.dict (v2, total 83.5 MB)

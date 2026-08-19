@@ -332,6 +332,13 @@
     - 線形走査の Vec 実装 (容量1024で µs オーダー、HashMap+順序管理の複雑さに見合わない)
 - 残課題: serve (HTTP/DO) への学習配線は別タスク (PRD の /commit)。jamo-ime (Windows) は IPC サーバー側への配線が必要
 
+### T140 dict info ✓ (2026-08-19)
+- やったこと: jamo-core に dict_stats モジュール新設 (バイナリ v2 のセクション走査)。CLI に `jamo dict info <dict>` サブコマンド追加。テスト4件 (core: セクション合計整合・不正 magic・切断/末尾余剰、CLI: ミニ辞書 build→info 結合)。役目を終えた scripts/dict-breakdown.py を削除し doc/memory.md の再現手順を dict info に更新。
+- 変更したファイル: jamo-core/src/dict_stats.rs (新規), jamo-core/src/lib.rs, jamo-cli/src/main.rs, jamo-cli/tests/cli_test.rs, scripts/dict-breakdown.py (削除), doc/memory.md, doc/current.md, doc/done.md
+- よかったこと: CSV + matrix.def を temp に生成するミニ辞書パターンで IPAdic 非依存の自己完結テストができた (既存 CLI テストは実辞書がないと skip だった)。実辞書での出力が Python 版と完全一致し移植を検証できた
+- 判断: 内訳計算はフォーマット知識なので core (dict_stats)、CLI は表示のみ。ロード実装 (read_binary) と独立のバイト走査にした — v3 追加時に両実装の相互検証として機能する。ipadic.rs (574行、YELLOW 目前) には足さず新モジュール
+- 残課題: T141 (v3 フォーマット設計)。v3 対応時に dict_stats も追随が必要
+
 ### メモリ実測基盤 + Iter 9 計画 ✓ (2026-08-19)
 - やったこと: scripts/bench-memory.py (jamo / Anthy / mozc_server の peak RSS 比較、外部エンジンは work 内で取得・ビルドしシステム無変更) と scripts/dict-breakdown.py (辞書バイナリのセクション内訳) を追加。実測結果と分析を doc/memory.md に記録。省メモリ辞書 (ゼロコピー v3) を Iter 9 (T140-T147) として計画。
 - 変更したファイル: scripts/bench-memory.py (新規), scripts/dict-breakdown.py (新規), doc/memory.md (新規), doc/tasks.md, doc/current.md, doc/done.md, README.md
