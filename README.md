@@ -7,7 +7,7 @@
 ## 特徴
 
 - **ポータブル** — 単一の Rust コアを C API (組み込み) / CLI / HTTP API / WASM / Windows IME (TSF) から利用可能
-- **省メモリ** — LOUDS trie + Viterbi デコーダ。WASM バイナリ 144KB
+- **省メモリ** — LOUDS trie + Viterbi デコーダ。WASM バイナリ 144KB。実行時メモリは削減作業中 (実測は [doc/memory.md](doc/memory.md))
 - **辞書ソース** — mozc dictionary_oss (推奨、Top-1 89.3%) / IPAdic + NEologd 等のマージ
 - **Cloudflare Workers 対応** — Durable Objects でユーザーごとに独立した辞書・学習データ
 

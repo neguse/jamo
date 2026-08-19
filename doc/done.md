@@ -332,6 +332,13 @@
     - 線形走査の Vec 実装 (容量1024で µs オーダー、HashMap+順序管理の複雑さに見合わない)
 - 残課題: serve (HTTP/DO) への学習配線は別タスク (PRD の /commit)。jamo-ime (Windows) は IPC サーバー側への配線が必要
 
+### メモリ実測基盤 + Iter 9 計画 ✓ (2026-08-19)
+- やったこと: scripts/bench-memory.py (jamo / Anthy / mozc_server の peak RSS 比較、外部エンジンは work 内で取得・ビルドしシステム無変更) と scripts/dict-breakdown.py (辞書バイナリのセクション内訳) を追加。実測結果と分析を doc/memory.md に記録。省メモリ辞書 (ゼロコピー v3) を Iter 9 (T140-T147) として計画。
+- 変更したファイル: scripts/bench-memory.py (新規), scripts/dict-breakdown.py (新規), doc/memory.md (新規), doc/tasks.md, doc/current.md, doc/done.md, README.md
+- よかったこと: getrusage(RUSAGE_CHILDREN) は累積 max のため使い捨て子プロセスで測る方式が確実だった。内訳計測で削減余地が定量化できた (terminal の 83% がセンチネル、表層の 41% が生成可能)
+- 判断: README の「省メモリ」は実測 (mozc 構成 RSS 152.4MB、Anthy 16.8MB の約9倍) と乖離しており、記述の弱体化ではなく実装での回収を選択 (ユーザー決定)。mozc_server は計測環境でデーモンが即終了し変換込み計測が不能のため、起動直後値 6.2MB を下限として記録し、スクリプトは観測不能時に skip を明示する設計にした
+- 残課題: T140-T147 の実装。README の省メモリ記述は Iter 9 完了時に実測値で更新
+
 ### プロジェクト方針の整理 (バージョン 0.x・アイデンティティ) ✓ (2026-08-19)
 - やったこと: crate バージョンを 0.x に整理 (jamo-core 2.0.0→0.2.0, jamo-cli 1.0.0→0.1.0)。README を「ポータブルなかな漢字変換エンジン」を軸に書き換え、開発状態 (pre-1.0) を明記。
 - 変更したファイル: jamo-core/Cargo.toml, jamo-cli/Cargo.toml, Cargo.lock, README.md, doc/current.md, doc/done.md
