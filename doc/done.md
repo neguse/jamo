@@ -332,6 +332,13 @@
     - 線形走査の Vec 実装 (容量1024で µs オーダー、HashMap+順序管理の複雑さに見合わない)
 - 残課題: serve (HTTP/DO) への学習配線は別タスク (PRD の /commit)。jamo-ime (Windows) は IPC サーバー側への配線が必要
 
+### mozc_server 22.7MB の内訳検証 ✓ (2026-08-19)
+- やったこと: 比較基準「本家 22.7MB」の中身を一次情報で検証。readelf の ELF セクション実測 (コード .text 2.9MB / .rodata 19.2MB)、埋め込み dataset の magic 確認、TOC (protobuf DataSetMetadata) のパースで46チャンクの内訳を取得し doc/memory.md に記録。
+- 変更したファイル: doc/memory.md, doc/done.md
+- よかったこと: dataset TOC が protobuf の単純な繰り返しで、アンカーなしでもエントリ単位のパターンマッチで回収できた。チャンク合計 18.9MB が .rodata 19.2MB と整合し検証が閉じた
+- 判断: jamo 同等機能のデータは dict 14.65 + conn 2.22 = 16.87MB。v3 見積もり 17.92MB は「バイナリ全体 22.7MB に勝つ」条件は満たすが「データ対データ」では 1.05MB 及ばない — 勝利条件の解釈をユーザーに確認する
+- 残課題: 勝利条件の確定 (バイナリ比較 or データ対データ)。後者なら token/表層の bit 単位符号化の追加検討が必要
+
 ### v3 サイズの事前検証 (勝算判定) ✓ (2026-08-19)
 - やったこと: scripts/estimate-v3.py を追加し、v3 各施策のサイズを mozc 実データで厳密見積もり。素の T141-T149 積み上げは 27.2MB で目標 (.dict ≤ 20MB) に届かないと判明。エントリ境界 BitVec 化・表層の可変長文字符号化・行列例外 varint の3施策を追加して 17.92MB を確認し、tasks.md の設計方針と成果物を実測値で更新。
 - 変更したファイル: scripts/estimate-v3.py (新規), doc/memory.md, doc/tasks.md, doc/done.md

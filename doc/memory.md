@@ -65,6 +65,23 @@ def kata_to_hira(s):
 
 対処は Iter 9 (doc/tasks.md) を参照。
 
+## mozc_server バイナリ 22.7MB の内訳 (2026-08-19)
+
+比較基準の「本家 22.7MB」の中身を実測した。readelf でコード (.text) は
+2.9MB のみで、.rodata 19.2MB のほぼ全体が埋め込み mozc dataset
+(magic `\xEF MOZC\r\n` を .rodata 先頭で確認)。dataset 末尾の TOC
+(protobuf DataSetMetadata: name/offset/size の46エントリ、合計 18.9MB で
+.rodata と整合) をパースした主要チャンク:
+
+| チャンク | サイズ | 対応する jamo セクション |
+|---------|-------|------------------------|
+| dict (読みtrie + token + 表層) | 14.65 MB | trie + token + 表層プール (v3 見積 15.2MB) |
+| conn (接続行列) | 2.22 MB | conn matrix (v3 見積 2.7MB) |
+| その他 (絵文字/zero query/単漢字/記号/usage 等) | ~2.0 MB | 対応機能なし |
+
+jamo と同等機能のデータは **dict + conn = 16.87MB**。v3 見積もり 17.92MB は
+バイナリ全体 (22.7MB) には勝つが、データ対データでは 1.05MB 及ばない。
+
 ## v3 サイズ見積もり (2026-08-19)
 
 `scripts/estimate-v3.py` による mozc 実データでの事前検証。trie ノード数は
