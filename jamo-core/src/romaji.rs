@@ -7,6 +7,8 @@
 /// 長いパターンを先に検索するためソート済み
 static ROMAJI_TABLE: &[(&str, &str)] = &[
     // 拗音 (3文字)
+    ("wyi", "ゐ"),
+    ("wye", "ゑ"),
     ("kya", "きゃ"),
     ("kyi", "きぃ"),
     ("kyu", "きゅ"),
@@ -169,8 +171,8 @@ static ROMAJI_TABLE: &[(&str, &str)] = &[
     ("re", "れ"),
     ("ro", "ろ"),
     ("wa", "わ"),
-    ("wi", "ゐ"),
-    ("we", "ゑ"),
+    ("wi", "うぃ"),
+    ("we", "うぇ"),
     ("wo", "を"),
     // 濁音 (2文字)
     ("ga", "が"),
@@ -535,6 +537,13 @@ mod tests {
     #[test]
     fn test_wa_wo() {
         assert_eq!(convert_all("wawo"), "わを");
+    }
+
+    #[test]
+    fn test_wi_we() {
+        // MS-IME 準拠: wi/we は現代表記、旧仮名は wyi/wye
+        assert_eq!(convert_all("wiwe"), "うぃうぇ");
+        assert_eq!(convert_all("wyiwye"), "ゐゑ");
     }
 
     #[test]
