@@ -64,3 +64,28 @@ def kata_to_hira(s):
 ```
 
 対処は Iter 9 (doc/tasks.md) を参照。
+
+## v3 サイズ見積もり (2026-08-19)
+
+`scripts/estimate-v3.py` による mozc 実データでの事前検証。trie ノード数は
+ソート済みキーの LCP 法で算出し、v2 の実ノード数 (4386839) と一致することで
+手法を検証している。
+
+```
+reading trie (1B enc)            2.69 MB
+token (4B + 3B non-ident)        7.80 MB
+combo table                      0.06 MB
+surface pool (encoded)           4.64 MB
+conn matrix (varint)             2.73 MB
+v3 TOTAL                        17.92 MB  (目標 <= 20 MB、本家 mozc_server 22.7 MB)
+```
+
+- 素朴な積み上げ (terminal 配列を残す・表層 UTF-8・行列例外固定長) は
+  27.2MB で目標に届かない。エントリ境界 BitVec 化・表層の可変長文字符号化・
+  行列例外 varint の3施策で 17.92MB になる
+- 表層は trie 化 (4.0MB) と可変長文字符号化 (3.9MB) がほぼ同等 → 実装と
+  復元が単純な符号化を採用
+- 読みの文字種は 255 で1バイト符号の上限ぎりぎり。追加辞書で増える場合の
+  エスケープ設計が必要 (T148)
+- RSS 見込み: ファイル 17.9MB (mmap) + rank/select 再構築 + 変換作業領域
+  で ~20MB (目標 ≤ 25MB)

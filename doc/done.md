@@ -332,6 +332,13 @@
     - 線形走査の Vec 実装 (容量1024で µs オーダー、HashMap+順序管理の複雑さに見合わない)
 - 残課題: serve (HTTP/DO) への学習配線は別タスク (PRD の /commit)。jamo-ime (Windows) は IPC サーバー側への配線が必要
 
+### v3 サイズの事前検証 (勝算判定) ✓ (2026-08-19)
+- やったこと: scripts/estimate-v3.py を追加し、v3 各施策のサイズを mozc 実データで厳密見積もり。素の T141-T149 積み上げは 27.2MB で目標 (.dict ≤ 20MB) に届かないと判明。エントリ境界 BitVec 化・表層の可変長文字符号化・行列例外 varint の3施策を追加して 17.92MB を確認し、tasks.md の設計方針と成果物を実測値で更新。
+- 変更したファイル: scripts/estimate-v3.py (新規), doc/memory.md, doc/tasks.md, doc/done.md
+- よかったこと: trie ノード数を「ソート済みキーの LCP 法」で構築なしに算出でき、v2 実ノード数と一致して手法を検証できた。設計前のシミュレーションで「作ってから届かない」を回避
+- 判断: 表層は trie 化 (4.0MB) と可変長文字符号化 (3.9MB) が同等サイズ → 実装と復元が単純な符号化を採用。読み1バイト符号化のノード削減は 41.9% (1/3 ではない: UTF-8 の先頭バイトは既に共有されていた)。読み文字種 255 は1バイト上限ぎりぎりでエスケープ設計を T148 に明記
+- 残課題: T141 設計に3施策を織り込む。estimate-v3.py は v3 実装後に dict info 実測へ役目を譲り削除する
+
 ### T140 dict info ✓ (2026-08-19)
 - やったこと: jamo-core に dict_stats モジュール新設 (バイナリ v2 のセクション走査)。CLI に `jamo dict info <dict>` サブコマンド追加。テスト4件 (core: セクション合計整合・不正 magic・切断/末尾余剰、CLI: ミニ辞書 build→info 結合)。役目を終えた scripts/dict-breakdown.py を削除し doc/memory.md の再現手順を dict info に更新。
 - 変更したファイル: jamo-core/src/dict_stats.rs (新規), jamo-core/src/lib.rs, jamo-cli/src/main.rs, jamo-cli/tests/cli_test.rs, scripts/dict-breakdown.py (削除), doc/memory.md, doc/current.md, doc/done.md
