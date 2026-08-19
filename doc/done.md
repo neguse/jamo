@@ -332,6 +332,13 @@
     - 線形走査の Vec 実装 (容量1024で µs オーダー、HashMap+順序管理の複雑さに見合わない)
 - 残課題: serve (HTTP/DO) への学習配線は別タスク (PRD の /commit)。jamo-ime (Windows) は IPC サーバー側への配線が必要
 
+### 「省メモリ」看板を下ろし Iter 9 をバックログ化 ✓ (2026-08-19)
+- やったこと: README の特徴から「省メモリ」を外し「小さいエンジン (WASM 144KB)」に置き換え。Iter 9 をバックログに変更し、tasks.md に状態と「完了が看板を掲げ直す条件」を記載。
+- 変更したファイル: README.md, doc/tasks.md, doc/current.md, doc/done.md
+- よかったこと: 実測基盤 (bench-memory.py / dict info / estimate-v3.py) と v3 設計検証が資産として残り、着手判断を数字でできる状態でバックログ化できた
+- 判断: 現行ユースケース (デスクトップ IME、CF DO 128MB 内、DM250 RAM 1GB で実機動作中) は現状メモリで動いており短期の削減必要なし (ユーザー確認)。看板は「ポータブル」に一本化し、「省メモリ」は Iter 9 完了時に実測をもって掲げ直す
+- 残課題: repo public 化の残手順 (ユーザー実行): push → visibility 切替 → interaction limits 設定
+
 ### 省メモリの定義確立 (Iter 9 完了条件の再構成) ✓ (2026-08-19)
 - やったこと: 「省メモリ」の看板の定義を「物理メモリが少ないデバイスでも動かせること」と確立 (ユーザー決定。言えないなら看板を下ろす)。Iter 9 の主 KPI を cgroup MemoryMax 下での変換完走 (目標 PRD embedded 予算 ~2MB、辞書はストレージに mmap) に再構成し、サイズは副 KPI に。T150 (少メモリ動作検証) と T151 (v3.1 bit 符号化、データ対データの本家超え) を追加。
 - 変更したファイル: doc/tasks.md, doc/current.md, doc/done.md
