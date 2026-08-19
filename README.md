@@ -1,14 +1,15 @@
-# Jamo - かな漢字変換エンジン & API
+# Jamo - ポータブルなかな漢字変換エンジン
 
-省メモリで組み込み可能なかな漢字変換エンジン (Rust) と、Cloudflare Workers 上で動作する変換 API。
+ポータブルなかな漢字変換エンジン (Rust)。ひとつのコアが組み込み機器からサーバーまで同じように動く。
+
+**開発状態: pre-1.0。** API・辞書フォーマット・内部構造は予告なく変わる。
 
 ## 特徴
 
-- **Rust 製変換エンジン** — LOUDS trie + Viterbi デコーダによるかな漢字変換
-- **複数インターフェース** — CLI / HTTP API / WebSocket / WASM / C API
+- **ポータブル** — 単一の Rust コアを C API (組み込み) / CLI / HTTP API / WASM / Windows IME (TSF) から利用可能
+- **省メモリ** — LOUDS trie + Viterbi デコーダ。WASM バイナリ 144KB
+- **辞書ソース** — mozc dictionary_oss (推奨、Top-1 89.3%) / IPAdic + NEologd 等のマージ
 - **Cloudflare Workers 対応** — Durable Objects でユーザーごとに独立した辞書・学習データ
-- **辞書マージ** — IPAdic ベース + NEologd 等の追加辞書を統合可能
-- **省メモリ** — WASM バイナリ 144KB、辞書バイナリ 19.2MB
 
 ## クイックスタート
 

@@ -1,6 +1,6 @@
 [package]
 name = "jamo-cli"
-version = "1.0.0"
+version = "0.1.0"
 edition = "2024"
 description = "CLI and HTTP server for jamo kana-kanji conversion engine"
 license = "MIT"

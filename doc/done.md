@@ -332,6 +332,13 @@
     - 線形走査の Vec 実装 (容量1024で µs オーダー、HashMap+順序管理の複雑さに見合わない)
 - 残課題: serve (HTTP/DO) への学習配線は別タスク (PRD の /commit)。jamo-ime (Windows) は IPC サーバー側への配線が必要
 
+### プロジェクト方針の整理 (バージョン 0.x・アイデンティティ) ✓ (2026-08-19)
+- やったこと: crate バージョンを 0.x に整理 (jamo-core 2.0.0→0.2.0, jamo-cli 1.0.0→0.1.0)。README を「ポータブルなかな漢字変換エンジン」を軸に書き換え、開発状態 (pre-1.0) を明記。
+- 変更したファイル: jamo-core/Cargo.toml, jamo-cli/Cargo.toml, Cargo.lock, README.md, doc/current.md, doc/done.md
+- よかったこと: git tag も crates.io 公開も皆無だったため、番号の付け直しに移行コストがゼロだった
+- 判断: crates.io 未公開で対外依存がなく、実フェーズは pre-1.0 (破壊的変更を恐れない)。semver でも 0.x は「minor で破壊可」でフェーズ表現として正しい。jamo-core は 0.2.0 とし「C API v2」世代との対応を残した。プロジェクトの主体は「ポータブルな変換エンジン」、C API/CLI/HTTP/WASM/IME はインターフェース群 (PRD の CF API 主軸像は初期構想として据え置き)
+- 残課題: PRD 全面改訂 (構成図・ロードマップが実態と乖離)
+
 ### repo public 化準備 ✓ (2026-08-19)
 - やったこと: 秘匿情報スキャン (git 全履歴、クリーン確認)。GitHub 設定 (Projects 無効化、description 設定)。CLAUDE.md のプロジェクト構成を実態に同期 (dicts/ 削除、data/・jamo-ime・scripts 追記)。
 - 変更したファイル: CLAUDE.md, doc/current.md, doc/done.md
