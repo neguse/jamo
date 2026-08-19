@@ -134,9 +134,11 @@ cargo fmt --check && cargo clippy -- -D warnings && cargo test
 jamo/
 ├── jamo-core/          # 変換エンジン (Rust lib, #[no_std] 対応)
 ├── jamo-cli/           # CLI・サーバー・辞書ビルド (Rust bin)
+├── jamo-ime/           # Windows IME (TSF COM DLL)
 ├── jamo-worker/        # CF Worker/DO (TypeScript)
 ├── doc/                # ドキュメント (current, tasks, done)
-├── dicts/              # 辞書ソース・ビルド済みバイナリ
+├── data/               # 辞書データ (gitignore、fetchスクリプトで取得)
+├── scripts/            # 開発スクリプト
 ├── .githooks/          # ローカルgitフック
 ├── CLAUDE.md           # このファイル
 └── PRD.md              # 製品要求仕様書

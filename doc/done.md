@@ -332,6 +332,13 @@
     - 線形走査の Vec 実装 (容量1024で µs オーダー、HashMap+順序管理の複雑さに見合わない)
 - 残課題: serve (HTTP/DO) への学習配線は別タスク (PRD の /commit)。jamo-ime (Windows) は IPC サーバー側への配線が必要
 
+### repo public 化準備 ✓ (2026-08-19)
+- やったこと: 秘匿情報スキャン (git 全履歴、クリーン確認)。GitHub 設定 (Projects 無効化、description 設定)。CLAUDE.md のプロジェクト構成を実態に同期 (dicts/ 削除、data/・jamo-ime・scripts 追記)。
+- 変更したファイル: CLAUDE.md, doc/current.md, doc/done.md
+- よかったこと: LICENSE / Cargo メタデータ / 辞書ライセンス表示 (README・fetch-mozc.sh) が整備済みで追加作業ゼロ。辞書バイナリを gitignore + fetch スクリプト方式にしていたのでライセンス上の配布問題もない
+- 判断: 外部 contribution は受け付けない。CONTRIBUTING.md は作らず GitHub の interaction limits (collaborators_only) で制限する。interaction limits は private repo に設定できないため public 化後に適用する。visibility 切替はユーザーが実行する
+- 残課題: public 切替 (ユーザー実行)。切替後の interaction limits 設定 (最長6ヶ月で失効、要再設定)
+
 ### T132 mozc 辞書ソース対応 ✓ (2026-08-18)
 - やったこと:
     - jamo-core/src/mozc.rs 新設: mozc dictionary_oss (dictionary*.txt + id.def + connection_single_column.txt) を IpaDict としてロード。既存のバイナリ形式・エンジンは無変更

@@ -138,6 +138,16 @@ jamo/
 └── .github/workflows/  # CI (Linux + Windows)
 ```
 
+## repo 公開
+
+準備完了 (2026-08-19)。秘匿情報は git 全履歴スキャンでクリーン確認済み。
+外部 contribution は受け付けない方針 (CONTRIBUTING.md は作らず GitHub 設定で制限)。
+残手順 (ユーザー実行):
+
+1. `gh repo edit neguse/jamo --visibility public --accept-visibility-change-consequences`
+2. `gh api repos/neguse/jamo/interaction-limits -X PUT -f limit=collaborators_only -f expiry=six_months`
+   — 外部からの PR/issue/comment をブロック。最長6ヶ月で失効するため要再設定
+
 ## 1.0 後の課題
 
 - T022 bigram LM (mozc 辞書採用で優先度低下。残る文脈依存誤りの解消用)
@@ -145,5 +155,4 @@ jamo/
 - T060 trigram LM
 - T061 NN リランキング
 - T062 長文脈変換
-- CONTRIBUTING.md
 - NEologd CSV 自動ダウンロードスクリプト
