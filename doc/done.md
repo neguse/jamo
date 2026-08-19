@@ -332,6 +332,13 @@
     - 線形走査の Vec 実装 (容量1024で µs オーダー、HashMap+順序管理の複雑さに見合わない)
 - 残課題: serve (HTTP/DO) への学習配線は別タスク (PRD の /commit)。jamo-ime (Windows) は IPC サーバー側への配線が必要
 
+### 省メモリの定義確立 (Iter 9 完了条件の再構成) ✓ (2026-08-19)
+- やったこと: 「省メモリ」の看板の定義を「物理メモリが少ないデバイスでも動かせること」と確立 (ユーザー決定。言えないなら看板を下ろす)。Iter 9 の主 KPI を cgroup MemoryMax 下での変換完走 (目標 PRD embedded 予算 ~2MB、辞書はストレージに mmap) に再構成し、サイズは副 KPI に。T150 (少メモリ動作検証) と T151 (v3.1 bit 符号化、データ対データの本家超え) を追加。
+- 変更したファイル: doc/tasks.md, doc/current.md, doc/done.md
+- よかったこと: 勝利条件の議論が「何と比べるか」から「どの環境で動くか」に転換し、PRD のメモリ予算と Iter 9 の目標が一本化された
+- 判断: 本家とのサイズ競争はプロキシ指標。mmap ゼロコピーの本質は「辞書全体 ≤ RAM」の要求を「変換時ワーキングセット ≤ RAM」に変えることで、看板の可否は T150 の実測で判定する。WASM は mmap がなく全ロード必須のため、PRD の wasm 予算 6MB は軽量辞書ビルドの領分として Iter 9 から切り離した
+- 残課題: 主 KPI ~2MB に実測で届かない場合の看板判断 (T150 で下限の evidence を出す)
+
 ### mozc_server 22.7MB の内訳検証 ✓ (2026-08-19)
 - やったこと: 比較基準「本家 22.7MB」の中身を一次情報で検証。readelf の ELF セクション実測 (コード .text 2.9MB / .rodata 19.2MB)、埋め込み dataset の magic 確認、TOC (protobuf DataSetMetadata) のパースで46チャンクの内訳を取得し doc/memory.md に記録。
 - 変更したファイル: doc/memory.md, doc/done.md
