@@ -356,18 +356,21 @@ impl Session {
     fn apply_result(&mut self, result: ConvertResult, learning: Option<&LearningStore>) {
         self.transform = None;
         self.boundaries = clause_boundaries(&result.clauses);
+        // 左から順に、直前文節の (学習適用後の) 表層を文脈として学習を引く
+        let mut context = String::new();
         self.clauses = result
             .clauses
             .into_iter()
             .map(|c| {
                 let mut candidates = c.candidates;
-                if let Some(learned) = learning.and_then(|l| l.get(&c.yomi)) {
+                if let Some(learned) = learning.and_then(|l| l.get(&context, &c.yomi)) {
                     // 学習済み表層を候補の先頭へ (なければ先頭に挿入)
                     if let Some(pos) = candidates.iter().position(|s| s == learned) {
                         candidates.remove(pos);
                     }
                     candidates.insert(0, learned.to_string());
                 }
+                context = candidates.first().cloned().unwrap_or_default();
                 SessionClause {
                     yomi: c.yomi,
                     candidates,
@@ -430,8 +433,10 @@ impl Session {
             if let Some(store) = learning
                 && learnable
             {
+                let mut context = "";
                 for clause in &self.clauses {
-                    store.record(&clause.yomi, clause.text());
+                    store.record(context, &clause.yomi, clause.text());
+                    context = clause.text();
                 }
             }
             self.preedit()

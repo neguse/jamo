@@ -164,7 +164,7 @@ fn test_commit_input_returns_kana_with_flush() {
 fn test_convert_applies_learning() {
     let dict = HashMapDict::test_dict();
     let mut store = LearningStore::new(16);
-    store.record("きょうは", "京は");
+    store.record("", "きょうは", "京は");
     let mut s = Session::new();
     feed_str(&mut s, "kyouha");
     s.convert(&dict, &SimpleConnectionCost, 5, Some(&store))
@@ -185,7 +185,7 @@ fn test_commit_records_learning_and_next_convert_uses_it() {
         .unwrap();
     s.select(0, idx).unwrap();
     s.commit(Some(&mut store));
-    assert_eq!(store.get("きょうは"), Some("京は"));
+    assert_eq!(store.get("", "きょうは"), Some("京は"));
 
     let mut s2 = Session::new();
     feed_str(&mut s2, "kyouha");
@@ -408,13 +408,13 @@ fn test_commit_after_katakana_transform_records_learning() {
     feed_str(&mut s, "jamo");
     s.transform(Transform::Katakana).unwrap();
     s.commit(Some(&mut store));
-    assert_eq!(store.get("じゃも"), Some("ジャモ"));
+    assert_eq!(store.get("", "じゃも"), Some("ジャモ"));
     // 英字変換は学習しない
     let mut s = Session::new();
     feed_str(&mut s, "jamo");
     s.transform(Transform::HalfAlpha).unwrap();
     s.commit(Some(&mut store));
-    assert_eq!(store.get("じゃも"), Some("ジャモ"));
+    assert_eq!(store.get("", "じゃも"), Some("ジャモ"));
 }
 
 #[test]
@@ -426,4 +426,31 @@ fn test_revert_after_transform_returns_to_input() {
     assert_eq!(s.state(), SessionState::Input);
     assert_eq!(s.preedit(), "じゃも");
     assert!(!s.is_alpha());
+}
+
+// ---- T164: 文脈つき学習 ----
+
+#[test]
+fn test_commit_records_previous_clause_as_context() {
+    // きょうはてんき → [今日は][天][木]。2文節目を選び直して確定すると
+    // (文脈「今日は」, てん → 選択) が記録される
+    let mut store = LearningStore::new(16);
+    let (mut s, dict) = converting_session("kyouhatenki");
+    assert_eq!(s.clauses().len(), 3);
+    let alt = s.clauses()[1]
+        .candidates
+        .iter()
+        .position(|c| c == "てん")
+        .unwrap();
+    s.select(1, alt).unwrap();
+    s.commit(Some(&mut store));
+    assert_eq!(store.get("今日は", "てん"), Some("てん"));
+    assert_eq!(store.get("", "きょうは"), Some("今日は"));
+
+    // 同じ文脈で再変換すると学習が効く
+    let mut s2 = Session::new();
+    feed_str(&mut s2, "kyouhatenki");
+    s2.convert(&dict, &SimpleConnectionCost, 5, Some(&store))
+        .unwrap();
+    assert_eq!(s2.clauses()[1].candidates[0], "てん");
 }
