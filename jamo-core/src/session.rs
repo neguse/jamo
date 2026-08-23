@@ -85,6 +85,8 @@ pub struct Session {
     alpha: bool,
     /// Converting が transform 由来ならその種別 (繰り返しで候補を巡回する)
     transform: Option<Transform>,
+    /// 部分確定で直前に確定した文節の表層 (残り文節の学習文脈)
+    context_carry: String,
 }
 
 impl Session {
@@ -357,7 +359,7 @@ impl Session {
         self.transform = None;
         self.boundaries = clause_boundaries(&result.clauses);
         // 左から順に、直前文節の (学習適用後の) 表層を文脈として学習を引く
-        let mut context = String::new();
+        let mut context = self.context_carry.clone();
         self.clauses = result
             .clauses
             .into_iter()
@@ -433,11 +435,7 @@ impl Session {
             if let Some(store) = learning
                 && learnable
             {
-                let mut context = "";
-                for clause in &self.clauses {
-                    store.record(context, &clause.yomi, clause.text());
-                    context = clause.text();
-                }
+                Self::record_clauses(store, &self.context_carry, &self.clauses);
             }
             self.preedit()
         } else {
@@ -448,6 +446,41 @@ impl Session {
         text
     }
 
+    /// フォーカス文節までを確定して返し、残りの文節は変換中のまま残す。
+    /// 残りがなければ (Input 中も) `commit` と同じ。
+    pub fn commit_prefix(&mut self, learning: Option<&mut LearningStore>) -> String {
+        let n = self.focus + 1;
+        if self.state() != SessionState::Converting || n >= self.clauses.len() {
+            return self.commit(learning);
+        }
+        let head: Vec<SessionClause> = self.clauses.drain(..n).collect();
+        let text: String = head.iter().map(|c| c.text()).collect();
+        if let Some(store) = learning {
+            Self::record_clauses(store, &self.context_carry, &head);
+        }
+        self.context_carry = head
+            .last()
+            .map(|c| c.text().to_string())
+            .unwrap_or_default();
+        let offset = self.boundaries[n - 1];
+        self.boundaries.drain(..n);
+        for b in &mut self.boundaries {
+            *b -= offset;
+        }
+        self.kana.replace_range(..offset, "");
+        self.cursor = self.kana.len();
+        self.focus = 0;
+        text
+    }
+
+    fn record_clauses(store: &mut LearningStore, context: &str, clauses: &[SessionClause]) {
+        let mut context = context;
+        for clause in clauses {
+            store.record(context, &clause.yomi, clause.text());
+            context = clause.text();
+        }
+    }
+
     /// 全状態を破棄して初期状態に戻す
     pub fn reset(&mut self) {
         self.romaji.reset();
@@ -455,6 +488,7 @@ impl Session {
         self.cursor = 0;
         self.clear_conversion();
         self.alpha = false;
+        self.context_carry.clear();
     }
 }
 

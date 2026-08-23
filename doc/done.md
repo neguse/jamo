@@ -474,3 +474,10 @@
 - 判断: mozc OSS の collocation.txt は 679 バイトのスタブで実データが無く、連語の事前投入は不可能と確認 (文脈学習 T164 が代替)
 - 残課題: なし
 
+### Session 部分確定 (commit_prefix) ✓ (2026-08-23)
+- やったこと: `Session::commit_prefix` — フォーカス文節までを確定して返し、残りの文節を変換中のまま残す (境界・かな・カーソルを詰め直す)。部分確定した文節の表層は残りの学習文脈として引き継ぐ。C API `jamo_session_commit_prefix`、include/jamo.h 再生成
+- 変更したファイル: jamo-core/src/session.rs, jamo-core/src/session/tests.rs, jamo-core/src/capi.rs, jamo-core/src/capi/tests.rs, jamo-core/include/jamo.h, doc/done.md
+- よかったこと: 境界配列がバイト位置の累積なので、先頭 n 文節の除去が「オフセットを引く」だけで済んだ
+- 判断: mozc の CommitOnlyFirstSegment (先頭 1 文節) ではなく「フォーカスまで」を確定する。左から順に直して Ctrl+↓ で確定する流れで、フォーカスが先頭なら同じ挙動になる
+- 残課題: なし
+

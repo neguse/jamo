@@ -608,6 +608,23 @@ pub unsafe extern "C" fn jamo_session_commit(session: *mut JamoCSession) -> *con
     s.scratch_str(text)
 }
 
+/// 部分確定。フォーカス文節までの確定文字列を返し、残りの文節は変換中のまま
+/// 残す (フォーカスが最後の文節なら `jamo_session_commit` と同じ)。
+///
+/// # Safety
+/// `session` は有効なセッションポインタであること。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jamo_session_commit_prefix(session: *mut JamoCSession) -> *const c_char {
+    let Some(s) = (unsafe { session.as_mut() }) else {
+        return ptr::null();
+    };
+    let engine = unsafe { &*s.engine };
+    let text = s
+        .session
+        .commit_prefix(Some(&mut engine.learning.borrow_mut()));
+    s.scratch_str(text)
+}
+
 /// 学習データ (ユーザーデータ) をファイルへ保存する
 ///
 /// # Safety

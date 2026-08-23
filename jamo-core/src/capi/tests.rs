@@ -247,3 +247,26 @@ fn test_alpha_and_transform_api() {
         jamo_engine_free(engine);
     }
 }
+
+#[test]
+fn test_commit_prefix_api() {
+    let Some(engine) = open_test_engine() else {
+        return;
+    };
+    unsafe {
+        let s = jamo_session_new(engine);
+        let input = cstr("kyouhatenkidesune");
+        assert_eq!(jamo_session_input(s, input.as_ptr()), JAMO_OK);
+        assert_eq!(jamo_session_convert(s, 5), JAMO_OK);
+        let n = jamo_session_clause_count(s);
+        assert!(n >= 2, "clauses: {n}");
+        let first = read_str(jamo_session_commit_prefix(s));
+        assert!(!first.is_empty());
+        assert_eq!(jamo_session_state(s), JAMO_STATE_CONVERTING);
+        assert_eq!(jamo_session_clause_count(s), n - 1);
+        assert_eq!(jamo_session_focus(s), 0);
+        jamo_session_reset(s);
+        jamo_session_free(s);
+        jamo_engine_free(engine);
+    }
+}

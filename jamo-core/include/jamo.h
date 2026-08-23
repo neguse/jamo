@@ -355,6 +355,15 @@ int32_t jamo_session_revert(struct jamo_session_t *session);
 const char *jamo_session_commit(struct jamo_session_t *session);
 
 /**
+ * 部分確定。フォーカス文節までの確定文字列を返し、残りの文節は変換中のまま
+ * 残す (フォーカスが最後の文節なら `jamo_session_commit` と同じ)。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+const char *jamo_session_commit_prefix(struct jamo_session_t *session);
+
+/**
  * 学習データ (ユーザーデータ) をファイルへ保存する
  *
  * # Safety

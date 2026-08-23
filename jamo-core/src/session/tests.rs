@@ -454,3 +454,47 @@ fn test_commit_records_previous_clause_as_context() {
         .unwrap();
     assert_eq!(s2.clauses()[1].candidates[0], "てん");
 }
+
+// ---- 部分確定 ----
+
+#[test]
+fn test_commit_prefix_commits_up_to_focus_and_keeps_rest() {
+    // きょうはてんき → [今日は][天][木]
+    let mut store = LearningStore::new(16);
+    let (mut s, _dict) = converting_session("kyouhatenki");
+    assert_eq!(s.commit_prefix(Some(&mut store)), "今日は");
+    assert_eq!(s.state(), SessionState::Converting);
+    assert_eq!(s.clauses().len(), 2);
+    assert_eq!(s.preedit(), "天木");
+    assert_eq!(s.focus(), 0);
+    assert_eq!(s.focused_range(), (0, 1));
+    assert_eq!(store.get("", "きょうは"), Some("今日は"));
+
+    // 残りの確定は、部分確定した文節を文脈として記録する
+    s.set_focus(1).unwrap();
+    assert_eq!(s.commit_prefix(Some(&mut store)), "天木");
+    assert_eq!(s.state(), SessionState::Input);
+    assert_eq!(s.preedit(), "");
+    assert_eq!(store.get("今日は", "てん"), Some("天"));
+}
+
+#[test]
+fn test_commit_prefix_then_resize_rest() {
+    let (mut s, dict) = converting_session("kyouhatenki");
+    s.commit_prefix(None);
+    // 残り「てんき」: 先頭文節「てん」を1文字伸ばして「てんき」→ 天気
+    s.resize(1, &dict, &SimpleConnectionCost, 5, None).unwrap();
+    assert_eq!(s.clauses().len(), 1);
+    assert_eq!(s.clauses()[0].yomi, "てんき");
+    assert!(s.clauses()[0].candidates.contains(&"天気".to_string()));
+    assert_eq!(s.revert(), Ok(()));
+    assert_eq!(s.preedit(), "てんき");
+}
+
+#[test]
+fn test_commit_prefix_in_input_is_plain_commit() {
+    let mut s = Session::new();
+    feed_str(&mut s, "kyou");
+    assert_eq!(s.commit_prefix(None), "きょう");
+    assert_eq!(s.state(), SessionState::Input);
+}
