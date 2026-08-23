@@ -203,3 +203,47 @@ fn test_cursor_api_edits_preedit() {
         jamo_engine_free(engine);
     }
 }
+
+#[test]
+fn test_alpha_and_transform_api() {
+    let Some(engine) = open_test_engine() else {
+        return;
+    };
+    unsafe {
+        let s = jamo_session_new(engine);
+        let input = cstr("Rust");
+        assert_eq!(jamo_session_input(s, input.as_ptr()), JAMO_OK);
+        assert_eq!(jamo_session_is_alpha(s), 1);
+        assert_eq!(read_str(jamo_session_preedit(s)), "Rust");
+        assert_eq!(read_str(jamo_session_commit(s)), "Rust");
+        assert_eq!(jamo_session_is_alpha(s), 0);
+
+        let input = cstr("jamo");
+        assert_eq!(jamo_session_input(s, input.as_ptr()), JAMO_OK);
+        assert_eq!(jamo_session_transform(s, JAMO_TRANSFORM_KATAKANA), JAMO_OK);
+        assert_eq!(jamo_session_state(s), JAMO_STATE_CONVERTING);
+        assert_eq!(read_str(jamo_session_preedit(s)), "ジャモ");
+        assert_eq!(
+            jamo_session_transform(s, JAMO_TRANSFORM_HALF_ALPHA),
+            JAMO_OK
+        );
+        assert_eq!(read_str(jamo_session_preedit(s)), "jamo");
+        assert_eq!(
+            jamo_session_transform(s, JAMO_TRANSFORM_HALF_ALPHA),
+            JAMO_OK
+        );
+        assert_eq!(read_str(jamo_session_preedit(s)), "JAMO");
+        assert_eq!(jamo_session_transform(s, 99), JAMO_ERR);
+        jamo_session_reset(s);
+        assert_eq!(
+            jamo_session_transform(s, JAMO_TRANSFORM_KATAKANA),
+            JAMO_ERR_EMPTY
+        );
+        assert_eq!(jamo_session_set_alpha(s, 1), JAMO_OK);
+        let input = cstr("abc");
+        assert_eq!(jamo_session_input(s, input.as_ptr()), JAMO_OK);
+        assert_eq!(read_str(jamo_session_preedit(s)), "abc");
+        jamo_session_free(s);
+        jamo_engine_free(engine);
+    }
+}

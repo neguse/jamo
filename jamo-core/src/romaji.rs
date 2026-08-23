@@ -189,11 +189,14 @@ impl RomajiConverter {
             return RomajiResult::Emit("っ".to_string());
         }
 
-        // マッチしない → pending をリセットして再試行
+        // マッチしない → pending を英字のまま出して、新しい文字から再開
+        // (黙って捨てると "st" の s が消える)
         if !self.pending.is_empty() {
-            // pending を捨てて、新しい文字から再開
-            self.pending.clear();
-            return self.feed(ch);
+            let dropped = core::mem::take(&mut self.pending);
+            return match self.feed(ch) {
+                RomajiResult::Emit(s) => RomajiResult::Emit(format!("{dropped}{s}")),
+                RomajiResult::Pending => RomajiResult::Emit(dropped),
+            };
         }
 
         // 単独文字でもマッチしない
@@ -230,6 +233,92 @@ impl RomajiConverter {
     pub fn reset(&mut self) {
         self.pending.clear();
     }
+}
+
+/// 逆変換で複数綴りがあるかなの優先綴り (テーブル先頭の綴りを使わないもの)
+static REVERSE_PREFERRED: &[(&str, &str)] = &[
+    ("じゃ", "ja"),
+    ("じゅ", "ju"),
+    ("じぇ", "je"),
+    ("じょ", "jo"),
+    ("い", "i"),
+];
+
+/// かな1単位 (拗音込み) の綴り。テーブルにないものは None
+fn romaji_for_kana(kana: &str) -> Option<&'static str> {
+    if let Some(&(_, roma)) = REVERSE_PREFERRED.iter().find(|&&(k, _)| k == kana) {
+        return Some(roma);
+    }
+    ROMAJI_TABLE
+        .iter()
+        .find(|&&(_, k)| k == kana)
+        .map(|&(roma, _)| roma)
+}
+
+/// ひらがな列を打鍵ローマ字に戻す (半角英字への変換用)。
+/// 拗音は 2 文字単位で先に引き、っ は次の子音の重ね打ち、ん は次が母音/y/n なら
+/// nn、それ以外は n。テーブルにない文字 (英数字・漢字など) はそのまま残す。
+pub fn kana_to_romaji(kana: &str) -> String {
+    let chars: Vec<char> = kana.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == 'っ' {
+            if let Some(&next) = chars.get(i + 1)
+                && let Some(first) = unit_romaji(&chars, i + 1).and_then(|s| s.chars().next())
+                && next != 'っ'
+                && is_romaji_consonant(first)
+            {
+                out.push(first);
+                i += 1;
+                continue;
+            }
+            out.push_str("xtu");
+            i += 1;
+            continue;
+        }
+        if ch == 'ん' {
+            let doubled = unit_romaji(&chars, i + 1)
+                .and_then(|s| s.chars().next())
+                .is_some_and(|c| is_vowel(c) || matches!(c, 'y' | 'n'));
+            out.push_str(if doubled { "nn" } else { "n" });
+            i += 1;
+            continue;
+        }
+        if let Some(pair) = chars.get(i..i + 2)
+            && let Some(roma) = romaji_for_kana(&pair.iter().collect::<String>())
+        {
+            out.push_str(roma);
+            i += 2;
+            continue;
+        }
+        match romaji_for_kana(&ch.to_string()) {
+            Some(roma) => out.push_str(roma),
+            None => {
+                let punct = PUNCTUATION_TABLE
+                    .iter()
+                    .find(|&&(_, hira)| hira.starts_with(ch))
+                    .map(|&(p, _)| p);
+                match punct {
+                    Some(p) => out.push(p),
+                    None => out.push(ch),
+                }
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// 位置 i から始まるかな1単位 (拗音優先) の綴り
+fn unit_romaji(chars: &[char], i: usize) -> Option<&'static str> {
+    if let Some(pair) = chars.get(i..i + 2)
+        && let Some(roma) = romaji_for_kana(&pair.iter().collect::<String>())
+    {
+        return Some(roma);
+    }
+    chars.get(i).and_then(|c| romaji_for_kana(&c.to_string()))
 }
 
 impl Default for RomajiConverter {

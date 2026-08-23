@@ -18,7 +18,7 @@ use std::ptr;
 
 use crate::ipadic::IpaDict;
 use crate::learning::LearningStore;
-use crate::session::{Session, SessionError, SessionState};
+use crate::session::{Session, SessionError, SessionState, Transform};
 
 #[cfg(test)]
 mod tests;
@@ -40,6 +40,15 @@ pub const JAMO_ERR_EMPTY: i32 = -5;
 pub const JAMO_STATE_INPUT: i32 = 0;
 /// jamo_session_state の返値: 変換中
 pub const JAMO_STATE_CONVERTING: i32 = 1;
+
+/// jamo_session_transform の種別: ひらがな
+pub const JAMO_TRANSFORM_HIRAGANA: i32 = 0;
+/// jamo_session_transform の種別: カタカナ
+pub const JAMO_TRANSFORM_KATAKANA: i32 = 1;
+/// jamo_session_transform の種別: 半角英字 (打鍵ローマ字)
+pub const JAMO_TRANSFORM_HALF_ALPHA: i32 = 2;
+/// jamo_session_transform の種別: 全角英字
+pub const JAMO_TRANSFORM_WIDE_ALPHA: i32 = 3;
 
 fn error_code(e: SessionError) -> i32 {
     match e {
@@ -291,6 +300,57 @@ pub unsafe extern "C" fn jamo_session_set_cursor(session: *mut JamoCSession, pos
         return JAMO_ERR;
     };
     match s.session.set_cursor(pos as usize) {
+        Ok(()) => JAMO_OK,
+        Err(e) => error_code(e),
+    }
+}
+
+/// 一時英字モードか (1 = 英字モード、0 = かな、負 = エラー)。
+/// 大文字の入力で自動的に on になり、確定/リセットで off になる。
+///
+/// # Safety
+/// `session` は有効なセッションポインタであること。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jamo_session_is_alpha(session: *const JamoCSession) -> i32 {
+    let Some(s) = (unsafe { session.as_ref() }) else {
+        return JAMO_ERR;
+    };
+    s.session.is_alpha() as i32
+}
+
+/// 一時英字モードを明示的に切り替える (0 = かな、それ以外 = 英字)
+///
+/// # Safety
+/// `session` は有効なセッションポインタであること。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jamo_session_set_alpha(session: *mut JamoCSession, on: i32) -> i32 {
+    let Some(s) = (unsafe { session.as_mut() }) else {
+        return JAMO_ERR;
+    };
+    match s.session.set_alpha(on != 0) {
+        Ok(()) => JAMO_OK,
+        Err(e) => error_code(e),
+    }
+}
+
+/// preedit 全体を文字種変換 (JAMO_TRANSFORM_*) した 1 文節の変換状態にする。
+/// 同じ種別を繰り返すと候補 (大小文字) を巡回する。変換中なら読み全体に適用する。
+///
+/// # Safety
+/// `session` は有効なセッションポインタであること。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jamo_session_transform(session: *mut JamoCSession, kind: i32) -> i32 {
+    let Some(s) = (unsafe { session.as_mut() }) else {
+        return JAMO_ERR;
+    };
+    let kind = match kind {
+        JAMO_TRANSFORM_HIRAGANA => Transform::Hiragana,
+        JAMO_TRANSFORM_KATAKANA => Transform::Katakana,
+        JAMO_TRANSFORM_HALF_ALPHA => Transform::HalfAlpha,
+        JAMO_TRANSFORM_WIDE_ALPHA => Transform::WideAlpha,
+        _ => return JAMO_ERR,
+    };
+    match s.session.transform(kind) {
         Ok(()) => JAMO_OK,
         Err(e) => error_code(e),
     }

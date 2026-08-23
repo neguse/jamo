@@ -9,13 +9,19 @@
 //! Input 中の preedit は「かな + カーソル位置の未確定ローマ字」で、カーソルは
 //! かなの任意の文字間に置ける (途中挿入・削除)。未確定ローマ字はカーソル移動や
 //! 変換の前に flush される (n → ん、未完成の子音は英字のまま)。
+//!
+//! 大文字 (Shift+英字) を入力すると確定まで英字モードになり、以後の文字は
+//! ローマ字変換せずそのまま preedit に入る (mozc の一時英字モード準拠)。
+//! `transform` は preedit 全体をカタカナ/ひらがな/半角英字/全角英字にした
+//! 1 文節の Converting 状態を作る (F7/F10/Ctrl+I 等のキーに割り当てる想定)。
 
 #[cfg(test)]
 mod tests;
 
 use crate::dict::Dictionary;
+use crate::kana;
 use crate::learning::LearningStore;
-use crate::romaji::{BackspaceResult, RomajiConverter};
+use crate::romaji::{BackspaceResult, RomajiConverter, kana_to_romaji};
 use crate::viterbi::{ConnectionCost, ConvertResult, clause_boundaries};
 
 /// セッションの状態
@@ -25,6 +31,19 @@ pub enum SessionState {
     Input,
     /// 変換中 (文節・候補を保持)
     Converting,
+}
+
+/// preedit 全体の文字種変換
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transform {
+    /// ひらがな
+    Hiragana,
+    /// カタカナ
+    Katakana,
+    /// 半角英字 (打鍵ローマ字に戻す。繰り返すと小文字→大文字→先頭大文字を巡回)
+    HalfAlpha,
+    /// 全角英字 (同上)
+    WideAlpha,
 }
 
 /// 変換中の1文節 (候補と選択状態)
@@ -62,6 +81,10 @@ pub struct Session {
     boundaries: Vec<usize>,
     /// フォーカス中の文節
     focus: usize,
+    /// 一時英字モード (大文字入力で on、確定/リセットで off)
+    alpha: bool,
+    /// Converting が transform 由来ならその種別 (繰り返しで候補を巡回する)
+    transform: Option<Transform>,
 }
 
 impl Session {
@@ -101,10 +124,88 @@ impl Session {
     /// Converting 中は無効 (ホストが commit/revert してから入力する)。
     pub fn feed(&mut self, ch: char) -> Result<(), SessionError> {
         self.ensure_input()?;
+        if ch.is_ascii_uppercase() && !self.alpha {
+            self.flush_pending();
+            self.alpha = true;
+        }
+        if self.alpha {
+            self.insert_at_cursor(&ch.to_string());
+            return Ok(());
+        }
         if let crate::romaji::RomajiResult::Emit(s) = self.romaji.feed(ch) {
             self.insert_at_cursor(&s);
         }
         Ok(())
+    }
+
+    /// 一時英字モードか
+    pub fn is_alpha(&self) -> bool {
+        self.alpha
+    }
+
+    /// 一時英字モードを明示的に切り替える (大文字入力によらない on/off)
+    pub fn set_alpha(&mut self, on: bool) -> Result<(), SessionError> {
+        self.ensure_input()?;
+        self.flush_pending();
+        self.alpha = on;
+        Ok(())
+    }
+
+    /// preedit 全体を文字種変換した 1 文節の Converting 状態にする。
+    /// 同じ種別を繰り返すと候補 (大小文字) を巡回する。
+    /// Converting 中 (通常変換) は読み全体に対して適用する。
+    pub fn transform(&mut self, kind: Transform) -> Result<(), SessionError> {
+        if self.state() == SessionState::Converting {
+            if self.transform == Some(kind) {
+                let c = &mut self.clauses[0];
+                c.selected = (c.selected + 1) % c.candidates.len();
+                return Ok(());
+            }
+            self.clear_conversion();
+        }
+        self.flush_pending();
+        if self.kana.is_empty() {
+            return Err(SessionError::EmptyInput);
+        }
+        let candidates = match kind {
+            Transform::Hiragana => vec![kana::to_hiragana(&self.kana)],
+            Transform::Katakana => vec![kana::to_katakana(&self.kana)],
+            Transform::HalfAlpha => alpha_variants(&kana_to_romaji(&self.kana), false),
+            Transform::WideAlpha => alpha_variants(&kana_to_romaji(&self.kana), true),
+        };
+        self.set_single_clause(candidates);
+        self.transform = Some(kind);
+        Ok(())
+    }
+
+    /// 英字モードの変換: 打った文字列の幅・大小文字バリエーションを候補にする
+    fn convert_alpha(&mut self) {
+        let typed = self.kana.clone();
+        let mut candidates = vec![typed.clone(), kana::to_wide(&typed)];
+        for v in alpha_variants(&typed, false) {
+            if !candidates.contains(&v) {
+                candidates.push(v);
+            }
+        }
+        self.set_single_clause(candidates);
+        self.transform = Some(Transform::HalfAlpha);
+    }
+
+    fn set_single_clause(&mut self, candidates: Vec<String>) {
+        self.boundaries = vec![self.kana.len()];
+        self.clauses = vec![SessionClause {
+            yomi: self.kana.clone(),
+            candidates,
+            selected: 0,
+        }];
+        self.focus = 0;
+    }
+
+    fn clear_conversion(&mut self) {
+        self.clauses.clear();
+        self.boundaries.clear();
+        self.focus = 0;
+        self.transform = None;
     }
 
     /// Backspace。未確定ローマ字→カーソル直前のかなの順で1文字消す。
@@ -219,6 +320,10 @@ impl Session {
         if self.kana.is_empty() {
             return Err(SessionError::EmptyInput);
         }
+        if self.alpha {
+            self.convert_alpha();
+            return Ok(());
+        }
         let result = crate::convert_nbest(&self.kana, dict, conn, n);
         self.apply_result(result, learning);
         self.focus = 0;
@@ -249,6 +354,7 @@ impl Session {
     }
 
     fn apply_result(&mut self, result: ConvertResult, learning: Option<&LearningStore>) {
+        self.transform = None;
         self.boundaries = clause_boundaries(&result.clauses);
         self.clauses = result
             .clauses
@@ -306,9 +412,7 @@ impl Session {
         if self.state() != SessionState::Converting {
             return Err(SessionError::InvalidState);
         }
-        self.clauses.clear();
-        self.boundaries.clear();
-        self.focus = 0;
+        self.clear_conversion();
         self.cursor = self.kana.len();
         Ok(())
     }
@@ -318,7 +422,14 @@ impl Session {
     /// `learning` を渡すと変換中の各文節の (読み→確定表層) が記録される。
     pub fn commit(&mut self, learning: Option<&mut LearningStore>) -> String {
         let text = if self.state() == SessionState::Converting {
-            if let Some(store) = learning {
+            // 英字変換 (打鍵に戻しただけ) は学習しない
+            let learnable = !matches!(
+                self.transform,
+                Some(Transform::HalfAlpha | Transform::WideAlpha)
+            );
+            if let Some(store) = learning
+                && learnable
+            {
                 for clause in &self.clauses {
                     store.record(&clause.yomi, clause.text());
                 }
@@ -337,10 +448,26 @@ impl Session {
         self.romaji.reset();
         self.kana.clear();
         self.cursor = 0;
-        self.clauses.clear();
-        self.boundaries.clear();
-        self.focus = 0;
+        self.clear_conversion();
+        self.alpha = false;
     }
+}
+
+/// 英字列の大小文字バリエーション (打った通り → 小文字 → 大文字 → 先頭大文字、重複除去)
+fn alpha_variants(typed: &str, wide: bool) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for v in [
+        typed.to_string(),
+        typed.to_ascii_lowercase(),
+        typed.to_ascii_uppercase(),
+        kana::capitalize(typed),
+    ] {
+        let v = if wide { kana::to_wide(&v) } else { v };
+        if !out.contains(&v) {
+            out.push(v);
+        }
+    }
+    out
 }
 
 /// セッション操作のエラー

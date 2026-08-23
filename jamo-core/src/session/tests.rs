@@ -291,3 +291,139 @@ fn test_cursor_ops_rejected_while_converting() {
     assert_eq!(s.move_cursor(-1), Err(SessionError::InvalidState));
     assert_eq!(s.delete_forward(), Err(SessionError::InvalidState));
 }
+
+// ---- T162: 入力モードと変換 ----
+
+#[test]
+fn test_uppercase_starts_alpha_mode() {
+    let mut s = Session::new();
+    assert!(!s.is_alpha());
+    feed_str(&mut s, "Rust");
+    assert!(s.is_alpha());
+    assert_eq!(s.preedit(), "Rust");
+    assert_eq!(s.commit(None), "Rust");
+    assert!(!s.is_alpha()); // 確定で解除
+}
+
+#[test]
+fn test_uppercase_mid_composition_switches_to_alpha() {
+    let mut s = Session::new();
+    feed_str(&mut s, "kyouhaJamo");
+    assert_eq!(s.preedit(), "きょうはJamo");
+    assert!(s.is_alpha());
+}
+
+#[test]
+fn test_uppercase_flushes_pending_consonant() {
+    let mut s = Session::new();
+    feed_str(&mut s, "kKa");
+    assert_eq!(s.preedit(), "kKa"); // 未完成の k は英字のまま
+}
+
+#[test]
+fn test_set_alpha_explicit() {
+    let mut s = Session::new();
+    s.set_alpha(true).unwrap();
+    feed_str(&mut s, "abc");
+    assert_eq!(s.preedit(), "abc");
+    s.set_alpha(false).unwrap();
+    feed_str(&mut s, "ka");
+    assert_eq!(s.preedit(), "abcか");
+}
+
+#[test]
+fn test_convert_in_alpha_mode_offers_width_and_case() {
+    let dict = HashMapDict::test_dict();
+    let mut s = Session::new();
+    feed_str(&mut s, "Rust");
+    s.convert(&dict, &SimpleConnectionCost, 5, None).unwrap();
+    assert_eq!(s.state(), SessionState::Converting);
+    assert_eq!(s.clauses().len(), 1);
+    let c = &s.clauses()[0].candidates;
+    assert_eq!(c[0], "Rust");
+    assert!(c.contains(&"Ｒｕｓｔ".to_string()));
+    assert!(c.contains(&"rust".to_string()));
+    assert!(c.contains(&"RUST".to_string()));
+}
+
+#[test]
+fn test_transform_katakana_and_back() {
+    let mut s = Session::new();
+    feed_str(&mut s, "jamo");
+    s.transform(Transform::Katakana).unwrap();
+    assert_eq!(s.state(), SessionState::Converting);
+    assert_eq!(s.preedit(), "ジャモ");
+    assert_eq!(s.focused_range(), (0, 3));
+    s.transform(Transform::Hiragana).unwrap();
+    assert_eq!(s.preedit(), "じゃも");
+    assert_eq!(s.commit(None), "じゃも");
+}
+
+#[test]
+fn test_transform_half_alpha_cycles_case() {
+    let mut s = Session::new();
+    feed_str(&mut s, "jamo");
+    s.transform(Transform::HalfAlpha).unwrap();
+    assert_eq!(s.preedit(), "jamo");
+    s.transform(Transform::HalfAlpha).unwrap();
+    assert_eq!(s.preedit(), "JAMO");
+    s.transform(Transform::HalfAlpha).unwrap();
+    assert_eq!(s.preedit(), "Jamo");
+    s.transform(Transform::HalfAlpha).unwrap();
+    assert_eq!(s.preedit(), "jamo"); // 一周
+    s.transform(Transform::WideAlpha).unwrap();
+    assert_eq!(s.preedit(), "ｊａｍｏ");
+}
+
+#[test]
+fn test_transform_with_pending_consonant_restores_typing() {
+    let mut s = Session::new();
+    feed_str(&mut s, "rust"); // るst
+    assert_eq!(s.preedit(), "るst");
+    s.transform(Transform::HalfAlpha).unwrap();
+    assert_eq!(s.preedit(), "rust");
+}
+
+#[test]
+fn test_transform_from_converting_uses_whole_kana() {
+    let (mut s, _dict) = converting_session("kyouha");
+    s.transform(Transform::Katakana).unwrap();
+    assert_eq!(s.preedit(), "キョウハ");
+    assert_eq!(s.clauses().len(), 1);
+}
+
+#[test]
+fn test_transform_empty_is_error() {
+    let mut s = Session::new();
+    assert_eq!(
+        s.transform(Transform::Katakana),
+        Err(SessionError::EmptyInput)
+    );
+}
+
+#[test]
+fn test_commit_after_katakana_transform_records_learning() {
+    let mut store = LearningStore::new(16);
+    let mut s = Session::new();
+    feed_str(&mut s, "jamo");
+    s.transform(Transform::Katakana).unwrap();
+    s.commit(Some(&mut store));
+    assert_eq!(store.get("じゃも"), Some("ジャモ"));
+    // 英字変換は学習しない
+    let mut s = Session::new();
+    feed_str(&mut s, "jamo");
+    s.transform(Transform::HalfAlpha).unwrap();
+    s.commit(Some(&mut store));
+    assert_eq!(store.get("じゃも"), Some("ジャモ"));
+}
+
+#[test]
+fn test_revert_after_transform_returns_to_input() {
+    let mut s = Session::new();
+    feed_str(&mut s, "jamo");
+    s.transform(Transform::Katakana).unwrap();
+    s.revert().unwrap();
+    assert_eq!(s.state(), SessionState::Input);
+    assert_eq!(s.preedit(), "じゃも");
+    assert!(!s.is_alpha());
+}

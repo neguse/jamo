@@ -432,3 +432,18 @@
 - 判断: カーソルは文字単位 (chunk 単位ではない)。「きょ」を 1 単位で消す案は MS-IME/mozc と違う手触りになるため却下。生ローマ字の保持は T162 で読みからの逆変換により実現する (chunk 方式は不要)
 - 残課題: なし
 
+### T162 入力モードと変換 ✓ (2026-08-23)
+- やったこと:
+    - 一時英字モード: 大文字 (Shift+英字) を feed すると未確定ローマ字を flush して英字モードに入り、確定/リセットまで文字をそのまま preedit に入れる (`Rust`、`きょうはJamo`)。`set_alpha` で明示切替も可。英字モードの `convert` は幅・大小文字バリエーションを候補にする
+    - `Session::transform(Hiragana|Katakana|HalfAlpha|WideAlpha)`: preedit 全体を文字種変換した 1 文節の Converting にする。同種別の繰り返しで大小文字を巡回、変換中からは読み全体に適用、英字変換は学習しない
+    - `romaji::kana_to_romaji`: 読みから打鍵ローマ字を復元 (っ は子音重ね、ん は次が母音/y/n なら nn、ASCII/句読点はそのまま)。chunk 方式でなく逆変換で生ローマ字を得る
+    - romaji FSM で不一致の pending を捨てていたのを英字として残す (`rust` → るst、以前は るt)
+    - `kana.rs` 新設 (to_katakana / to_hiragana / to_wide / capitalize)。viterbi のカタカナ変換を移設
+    - C API: `jamo_session_is_alpha` / `jamo_session_set_alpha` / `jamo_session_transform` + `JAMO_TRANSFORM_*`。include/jamo.h 再生成
+- 変更したファイル: jamo-core/src/session.rs, jamo-core/src/session/tests.rs, jamo-core/src/romaji.rs, jamo-core/src/romaji/tests.rs, jamo-core/src/kana.rs (新規), jamo-core/src/viterbi.rs, jamo-core/src/lib.rs, jamo-core/src/capi.rs, jamo-core/src/capi/tests.rs, jamo-core/include/jamo.h, doc/done.md
+- よかったこと: 文字種変換を「候補 1 文節の Converting」として既存の preedit/focused_range/commit/学習の経路に乗せたので、ホスト側は transform を呼ぶだけで表示も確定も変わらない
+- 判断:
+    - 逆変換の綴りはテーブル先頭優先 + 少数の上書き (じゃ→ja、い→i)。打鍵の完全保持 (chunk 方式) はカーソル編集と相性が悪く、F10 用途には逆変換で十分
+    - 半角カタカナ変換は DM250/エディタ用途で需要がないため未実装
+- 残課題: Windows composition.rs は独自状態機械のままで、英字モード・カーソル・transform は未対応 (Session へ乗せ換える別タスク)
+

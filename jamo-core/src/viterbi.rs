@@ -266,21 +266,6 @@ pub fn decode_nbest(
     ConvertResult { segments, clauses }
 }
 
-/// ひらがなをカタカナに変換 (ひらがな以外はそのまま)
-fn hiragana_to_katakana(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            let cp = c as u32;
-            // ひらがな (U+3041..U+3096) → カタカナ (U+30A1..U+30F6)
-            if (0x3041..=0x3096).contains(&cp) {
-                char::from_u32(cp + 0x60).unwrap_or(c)
-            } else {
-                c
-            }
-        })
-        .collect()
-}
-
 /// 文節候補の末尾に読みのひらがな/カタカナを重複なしで追加する
 /// (辞書にない語でもかな表記を候補から選べるようにする)
 fn push_kana_fallbacks(candidates: &mut Vec<String>, yomi: &str) {
@@ -288,7 +273,7 @@ fn push_kana_fallbacks(candidates: &mut Vec<String>, yomi: &str) {
     if !candidates.contains(&hira) {
         candidates.push(hira);
     }
-    let kata = hiragana_to_katakana(yomi);
+    let kata = crate::kana::to_katakana(yomi);
     if !candidates.contains(&kata) {
         candidates.push(kata);
     }

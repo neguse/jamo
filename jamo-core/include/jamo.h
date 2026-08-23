@@ -49,6 +49,26 @@
 #define JAMO_STATE_CONVERTING 1
 
 /**
+ * jamo_session_transform の種別: ひらがな
+ */
+#define JAMO_TRANSFORM_HIRAGANA 0
+
+/**
+ * jamo_session_transform の種別: カタカナ
+ */
+#define JAMO_TRANSFORM_KATAKANA 1
+
+/**
+ * jamo_session_transform の種別: 半角英字 (打鍵ローマ字)
+ */
+#define JAMO_TRANSFORM_HALF_ALPHA 2
+
+/**
+ * jamo_session_transform の種別: 全角英字
+ */
+#define JAMO_TRANSFORM_WIDE_ALPHA 3
+
+/**
  * 品詞タイプ: 自立語 (文節の先頭になれる)
  */
 #define POS_CONTENT 0
@@ -185,6 +205,33 @@ int32_t jamo_session_move_cursor(struct jamo_session_t *session, int32_t delta);
  * `session` は有効なセッションポインタであること。
  */
 int32_t jamo_session_set_cursor(struct jamo_session_t *session, uint32_t pos);
+
+/**
+ * 一時英字モードか (1 = 英字モード、0 = かな、負 = エラー)。
+ * 大文字の入力で自動的に on になり、確定/リセットで off になる。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_is_alpha(const struct jamo_session_t *session);
+
+/**
+ * 一時英字モードを明示的に切り替える (0 = かな、それ以外 = 英字)
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_set_alpha(struct jamo_session_t *session, int32_t on);
+
+/**
+ * preedit 全体を文字種変換 (JAMO_TRANSFORM_*) した 1 文節の変換状態にする。
+ * 同じ種別を繰り返すと候補 (大小文字) を巡回する。変換中なら読み全体に適用する。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_transform(struct jamo_session_t *session,
+                               int32_t kind);
 
 /**
  * preedit 表示文字列を返す。

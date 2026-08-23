@@ -311,3 +311,40 @@ fn test_n_apostrophe() {
     assert_eq!(convert_all("n'"), "ん");
     assert_eq!(convert_all("kan'i"), "かんい");
 }
+
+// ---- T162: かな→ローマ字 (F10 用の生ローマ字復元) ----
+
+#[test]
+fn test_kana_to_romaji_basic() {
+    assert_eq!(kana_to_romaji("じゃも"), "jamo");
+    assert_eq!(kana_to_romaji("きょう"), "kyou");
+    assert_eq!(kana_to_romaji("しち"), "shichi");
+    assert_eq!(kana_to_romaji("つ"), "tsu");
+    assert_eq!(kana_to_romaji("ふぁいる"), "fairu");
+}
+
+#[test]
+fn test_kana_to_romaji_sokuon_and_n() {
+    assert_eq!(kana_to_romaji("きっと"), "kitto");
+    assert_eq!(kana_to_romaji("あっ"), "axtu");
+    assert_eq!(kana_to_romaji("かんい"), "kanni"); // ん + 母音は nn
+    assert_eq!(kana_to_romaji("かんな"), "kannna"); // nn→ん の後に na (この FSM の打鍵通り)
+    assert_eq!(kana_to_romaji("ほん"), "hon");
+    assert_eq!(kana_to_romaji("ほんき"), "honki");
+}
+
+#[test]
+fn test_kana_to_romaji_keeps_other_chars() {
+    // 英字 (英字モードの生文字)・句読点・ー・数字
+    assert_eq!(kana_to_romaji("るst"), "rust");
+    assert_eq!(kana_to_romaji("でーた。"), "de-ta.");
+    assert_eq!(kana_to_romaji("2026ねん"), "2026nen");
+    assert_eq!(kana_to_romaji("漢"), "漢");
+}
+
+#[test]
+fn test_unmatched_pending_is_kept_as_letters() {
+    assert_eq!(convert_all("rust"), "るst");
+    assert_eq!(convert_all("ksa"), "kさ");
+    assert_eq!(convert_all("hello"), "へlぉ");
+}
