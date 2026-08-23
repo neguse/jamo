@@ -348,3 +348,23 @@ fn test_unmatched_pending_is_kept_as_letters() {
     assert_eq!(convert_all("ksa"), "kさ");
     assert_eq!(convert_all("hello"), "へlぉ");
 }
+
+// ---- z 記号 (mozc 準拠) ----
+
+#[test]
+fn test_z_symbols() {
+    assert_eq!(convert_all("zh"), "←");
+    assert_eq!(convert_all("zj"), "↓");
+    assert_eq!(convert_all("zk"), "↑");
+    assert_eq!(convert_all("zl"), "→");
+    assert_eq!(convert_all("z."), "…");
+    assert_eq!(convert_all("z,"), "‥");
+    assert_eq!(convert_all("z-"), "〜");
+    assert_eq!(convert_all("z/"), "・");
+    assert_eq!(convert_all("z["), "『");
+    assert_eq!(convert_all("z]"), "』");
+    // 通常の z 行はそのまま
+    assert_eq!(convert_all("za"), "ざ");
+    assert_eq!(convert_all("zyo"), "じょ");
+    assert_eq!(convert_all("mazi"), "まじ");
+}

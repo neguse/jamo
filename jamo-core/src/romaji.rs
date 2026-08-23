@@ -124,8 +124,17 @@ impl RomajiConverter {
             return RomajiResult::Emit("ん".to_string());
         }
 
-        // 句読点・ローマ字でない文字: 未確定分を flush してから続ける
+        // 記号つきのテーブル一致 ("z." → …) は句読点変換より先
         let ch_lower = ch.to_ascii_lowercase();
+        if !ch_lower.is_ascii_alphabetic() && !self.pending.is_empty() {
+            let candidate = format!("{}{}", self.pending, ch_lower);
+            if let Some((sym, _)) = lookup_exact(&candidate) {
+                self.pending.clear();
+                return RomajiResult::Emit(sym.to_string());
+            }
+        }
+
+        // 句読点・ローマ字でない文字: 未確定分を flush してから続ける
         if !ch_lower.is_ascii_alphabetic() {
             let flushed = self.flush();
             let text = PUNCTUATION_TABLE
