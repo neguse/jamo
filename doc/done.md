@@ -409,3 +409,14 @@
 - よかったこと: DM250 実機常用が実用バグの検出網になっている (we→ゑ の報告が発端)
 - 判断: yi/ye→い/いぇ と同じ現代表記方針に統一。wha/whi/whe/who 系の追加は要望が出るまで見送り
 - 残課題: なし
+
+### T160 ローマ字の取りこぼし修正 ✓ (2026-08-23)
+- やったこと:
+    - `flush()` が「n」以外の未確定子音を捨てていたのを、打った英字のまま返すよう変更 (`kyouk` + Space/Enter で k が消えない)
+    - 句読点変換を pending の有無に関わらず適用 (`hon.` → ほん。、`k.` → k。)
+    - `xtsu`/`ltsu` → っ、`n'` → ん (アポストロフィ消費) を追加
+    - romaji.rs (743 行) をテーブル `romaji/table.rs` とテスト `romaji/tests.rs` に分割
+- 変更したファイル: jamo-core/src/romaji.rs, jamo-core/src/romaji/table.rs (新規), jamo-core/src/romaji/tests.rs (新規), doc/done.md, doc/tasks.md, doc/current.md
+- よかったこと: probe crate (scratchpad) で feed 列→出力を一括で見る手順が、仕様の粗さをテストケースにそのまま落とせた
+- 判断: 未確定子音の扱いは mozc 準拠 (preedit に英字として残す)。捨てる方が「きれい」に見えるが、入力が黙って失われる方が害が大きい
+- 残課題: なし
