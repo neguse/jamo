@@ -150,6 +150,43 @@ int32_t jamo_session_input(struct jamo_session_t *session, const char *text);
 int32_t jamo_session_backspace(struct jamo_session_t *session);
 
 /**
+ * カーソル直後のかなを1文字消す (Delete)。未確定ローマ字は先に確定する。
+ *
+ * 返値: 1 = 消した、0 = 消すものがない、負 = エラー。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_delete_forward(struct jamo_session_t *session);
+
+/**
+ * preedit 内のカーソル位置 (文字単位)。Input 中のみ意味を持つ。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_cursor(const struct jamo_session_t *session);
+
+/**
+ * カーソルを文字単位で移動する。未確定ローマ字は先に確定する。
+ *
+ * 返値: 1 = 動いた、0 = 端で動けない、負 = エラー。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_move_cursor(struct jamo_session_t *session, int32_t delta);
+
+/**
+ * カーソルを文字インデックスへ移動する (範囲外は端に丸める)。
+ * 未確定ローマ字は先に確定する。
+ *
+ * # Safety
+ * `session` は有効なセッションポインタであること。
+ */
+int32_t jamo_session_set_cursor(struct jamo_session_t *session, uint32_t pos);
+
+/**
  * preedit 表示文字列を返す。
  * Input 中: かな+未確定ローマ字、Converting 中: 選択中候補の連結。
  *

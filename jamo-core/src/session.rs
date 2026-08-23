@@ -5,6 +5,13 @@
 //! どのキーで何を起こすかはホスト (lite-dm2x の ime.lua、Windows の
 //! composition.rs、C API 利用者) が決める。
 //! 辞書・接続コストは保持せず、必要な操作の引数で受け取る (状態とロジックの分離)。
+//!
+//! Input 中の preedit は「かな + カーソル位置の未確定ローマ字」で、カーソルは
+//! かなの任意の文字間に置ける (途中挿入・削除)。未確定ローマ字はカーソル移動や
+//! 変換の前に flush される (n → ん、未完成の子音は英字のまま)。
+
+#[cfg(test)]
+mod tests;
 
 use crate::dict::Dictionary;
 use crate::learning::LearningStore;
@@ -47,6 +54,8 @@ pub struct Session {
     romaji: RomajiConverter,
     /// 確定済みひらがな
     kana: String,
+    /// kana 内のカーソル (バイト位置)。未確定ローマ字はここに挿入される
+    cursor: usize,
     /// 変換中の文節 (空 = Input 状態)
     clauses: Vec<SessionClause>,
     /// kana への文節境界バイト位置
@@ -68,51 +77,122 @@ impl Session {
         }
     }
 
+    fn ensure_input(&self) -> Result<(), SessionError> {
+        if self.state() == SessionState::Converting {
+            Err(SessionError::InvalidState)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// カーソル位置に文字列を挿入してカーソルを進める
+    fn insert_at_cursor(&mut self, s: &str) {
+        self.kana.insert_str(self.cursor, s);
+        self.cursor += s.len();
+    }
+
+    /// 未確定ローマ字をカーソル位置に確定する
+    fn flush_pending(&mut self) {
+        let flushed = self.romaji.flush();
+        self.insert_at_cursor(&flushed);
+    }
+
     /// 1文字入力 (ローマ字はひらがなに変換、その他はそのまま)。
     /// Converting 中は無効 (ホストが commit/revert してから入力する)。
     pub fn feed(&mut self, ch: char) -> Result<(), SessionError> {
-        if self.state() == SessionState::Converting {
-            return Err(SessionError::InvalidState);
-        }
+        self.ensure_input()?;
         if let crate::romaji::RomajiResult::Emit(s) = self.romaji.feed(ch) {
-            self.kana.push_str(&s);
+            self.insert_at_cursor(&s);
         }
         Ok(())
     }
 
-    /// Backspace。未確定ローマ字→ひらがなの順で1文字消す。
+    /// Backspace。未確定ローマ字→カーソル直前のかなの順で1文字消す。
     /// 消すものがなければ false (ホストは通常の Backspace として扱う)。
     pub fn backspace(&mut self) -> Result<bool, SessionError> {
-        if self.state() == SessionState::Converting {
-            return Err(SessionError::InvalidState);
-        }
+        self.ensure_input()?;
         match self.romaji.backspace() {
             BackspaceResult::DeletedPending => Ok(true),
             BackspaceResult::DeleteHiragana | BackspaceResult::Empty => {
-                if self.kana.is_empty() {
-                    Ok(false)
-                } else {
-                    self.kana.pop();
-                    Ok(true)
-                }
+                let Some((start, _)) = self.kana[..self.cursor].char_indices().next_back() else {
+                    return Ok(false);
+                };
+                self.kana.replace_range(start..self.cursor, "");
+                self.cursor = start;
+                Ok(true)
             }
         }
+    }
+
+    /// カーソル直後のかなを1文字消す (Delete)。未確定ローマ字は先に確定する。
+    /// 消すものがなければ false。
+    pub fn delete_forward(&mut self) -> Result<bool, SessionError> {
+        self.ensure_input()?;
+        self.flush_pending();
+        let Some(ch) = self.kana[self.cursor..].chars().next() else {
+            return Ok(false);
+        };
+        self.kana
+            .replace_range(self.cursor..self.cursor + ch.len_utf8(), "");
+        Ok(true)
+    }
+
+    /// カーソル位置 (preedit 内の文字インデックス)。Input 中のみ意味を持つ
+    pub fn cursor(&self) -> usize {
+        self.kana[..self.cursor].chars().count() + self.romaji.pending().chars().count()
+    }
+
+    /// カーソルを文字単位で移動する。未確定ローマ字は先に確定する。
+    /// 端で動けなければ false。
+    pub fn move_cursor(&mut self, delta: i32) -> Result<bool, SessionError> {
+        self.ensure_input()?;
+        self.flush_pending();
+        let chars = self.kana[..self.cursor].chars().count() as i64;
+        let total = self.kana.chars().count() as i64;
+        let target = (chars + delta as i64).clamp(0, total);
+        if target == chars {
+            return Ok(false);
+        }
+        self.set_cursor_chars(target as usize);
+        Ok(true)
+    }
+
+    /// カーソルを文字インデックスへ移動する (範囲外は端に丸める)
+    pub fn set_cursor(&mut self, pos: usize) -> Result<(), SessionError> {
+        self.ensure_input()?;
+        self.flush_pending();
+        self.set_cursor_chars(pos);
+        Ok(())
+    }
+
+    fn set_cursor_chars(&mut self, pos: usize) {
+        self.cursor = self
+            .kana
+            .char_indices()
+            .nth(pos)
+            .map(|(b, _)| b)
+            .unwrap_or(self.kana.len());
     }
 
     /// preedit 表示文字列。Input: かな+未確定ローマ字、Converting: 選択中候補の連結
     pub fn preedit(&self) -> String {
         if self.state() == SessionState::Input {
-            format!("{}{}", self.kana, self.romaji.pending())
+            format!(
+                "{}{}{}",
+                &self.kana[..self.cursor],
+                self.romaji.pending(),
+                &self.kana[self.cursor..]
+            )
         } else {
             self.clauses.iter().map(|c| c.text()).collect()
         }
     }
 
     /// preedit 内のフォーカス範囲 (文字単位の (開始, 長さ))。
-    /// Input 中はカーソル位置 (末尾, 0)。
+    /// Input 中はカーソル位置 (長さ 0)。
     pub fn focused_range(&self) -> (usize, usize) {
         if self.state() == SessionState::Input {
-            return (self.preedit().chars().count(), 0);
+            return (self.cursor(), 0);
         }
         let mut from = 0;
         for (i, clause) in self.clauses.iter().enumerate() {
@@ -134,10 +214,8 @@ impl Session {
         n: usize,
         learning: Option<&LearningStore>,
     ) -> Result<(), SessionError> {
-        if self.state() == SessionState::Converting {
-            return Err(SessionError::InvalidState);
-        }
-        self.kana.push_str(&self.romaji.flush());
+        self.ensure_input()?;
+        self.flush_pending();
         if self.kana.is_empty() {
             return Err(SessionError::EmptyInput);
         }
@@ -223,7 +301,7 @@ impl Session {
         Ok(())
     }
 
-    /// 変換を取り消して Input に戻る (かなは保持)
+    /// 変換を取り消して Input に戻る (かなは保持、カーソルは末尾)
     pub fn revert(&mut self) -> Result<(), SessionError> {
         if self.state() != SessionState::Converting {
             return Err(SessionError::InvalidState);
@@ -231,6 +309,7 @@ impl Session {
         self.clauses.clear();
         self.boundaries.clear();
         self.focus = 0;
+        self.cursor = self.kana.len();
         Ok(())
     }
 
@@ -246,7 +325,8 @@ impl Session {
             }
             self.preedit()
         } else {
-            format!("{}{}", self.kana, self.romaji.flush())
+            self.flush_pending();
+            self.kana.clone()
         };
         self.reset();
         text
@@ -256,6 +336,7 @@ impl Session {
     pub fn reset(&mut self) {
         self.romaji.reset();
         self.kana.clear();
+        self.cursor = 0;
         self.clauses.clear();
         self.boundaries.clear();
         self.focus = 0;
@@ -273,212 +354,4 @@ pub enum SessionError {
     InvalidIndex,
     /// 伸縮できない (端の文節など)
     InvalidResize,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::dict::HashMapDict;
-    use crate::viterbi::SimpleConnectionCost;
-
-    fn feed_str(s: &mut Session, text: &str) {
-        for ch in text.chars() {
-            s.feed(ch).unwrap();
-        }
-    }
-
-    fn converting_session(input: &str) -> (Session, HashMapDict) {
-        let dict = HashMapDict::test_dict();
-        let mut s = Session::new();
-        feed_str(&mut s, input);
-        s.convert(&dict, &SimpleConnectionCost, 5, None).unwrap();
-        (s, dict)
-    }
-
-    #[test]
-    fn test_new_session_is_empty_input() {
-        let s = Session::new();
-        assert_eq!(s.state(), SessionState::Input);
-        assert_eq!(s.preedit(), "");
-        assert!(s.clauses().is_empty());
-    }
-
-    #[test]
-    fn test_feed_romaji_builds_kana() {
-        let mut s = Session::new();
-        s.feed('k').unwrap();
-        assert_eq!(s.preedit(), "k"); // 未確定ローマ字も preedit に出る
-        s.feed('y').unwrap();
-        s.feed('o').unwrap();
-        assert_eq!(s.preedit(), "きょ");
-        s.feed('u').unwrap();
-        assert_eq!(s.preedit(), "きょう");
-    }
-
-    #[test]
-    fn test_feed_hiragana_passthrough() {
-        let mut s = Session::new();
-        s.feed('き').unwrap();
-        s.feed('ょ').unwrap();
-        assert_eq!(s.preedit(), "きょ");
-    }
-
-    #[test]
-    fn test_backspace_pending_then_kana() {
-        let mut s = Session::new();
-        feed_str(&mut s, "kak");
-        assert_eq!(s.preedit(), "かk");
-        assert_eq!(s.backspace(), Ok(true)); // pending "k" を消す
-        assert_eq!(s.preedit(), "か");
-        assert_eq!(s.backspace(), Ok(true)); // かなを消す
-        assert_eq!(s.preedit(), "");
-        assert_eq!(s.backspace(), Ok(false)); // もう何もない
-    }
-
-    #[test]
-    fn test_convert_moves_to_converting() {
-        let (s, _dict) = converting_session("kyouha");
-        assert_eq!(s.state(), SessionState::Converting);
-        assert_eq!(s.clauses().len(), 1);
-        assert_eq!(s.clauses()[0].yomi, "きょうは");
-        assert_eq!(s.preedit(), "今日は");
-        assert_eq!(s.focus(), 0);
-    }
-
-    #[test]
-    fn test_convert_flushes_pending_n() {
-        let dict = HashMapDict::test_dict();
-        let mut s = Session::new();
-        feed_str(&mut s, "kyoun"); // "n" が pending に残る
-        s.convert(&dict, &SimpleConnectionCost, 5, None).unwrap();
-        let all_yomi: String = s.clauses().iter().map(|c| c.yomi.as_str()).collect();
-        assert_eq!(all_yomi, "きょうん"); // flush で「ん」が確定してから変換される
-    }
-
-    #[test]
-    fn test_convert_empty_is_error() {
-        let dict = HashMapDict::test_dict();
-        let mut s = Session::new();
-        assert_eq!(
-            s.convert(&dict, &SimpleConnectionCost, 5, None),
-            Err(SessionError::EmptyInput)
-        );
-    }
-
-    #[test]
-    fn test_feed_while_converting_is_error() {
-        let (mut s, _dict) = converting_session("kyouha");
-        assert_eq!(s.feed('a'), Err(SessionError::InvalidState));
-    }
-
-    #[test]
-    fn test_select_candidate_changes_preedit() {
-        let (mut s, _dict) = converting_session("kyouha");
-        let candidates = s.clauses()[0].candidates.clone();
-        let kyou_ha = candidates.iter().position(|c| c == "京は").unwrap();
-        s.select(0, kyou_ha).unwrap();
-        assert_eq!(s.preedit(), "京は");
-        assert_eq!(s.clauses()[0].selected, kyou_ha);
-        assert_eq!(s.select(0, 999), Err(SessionError::InvalidIndex));
-    }
-
-    #[test]
-    fn test_focus_and_range() {
-        // きょうはてんき → [今日は][天][木]
-        let (mut s, _dict) = converting_session("kyouhatenki");
-        assert_eq!(s.clauses().len(), 3);
-        assert_eq!(s.focused_range(), (0, 3)); // 今日は
-        s.set_focus(1).unwrap();
-        assert_eq!(s.focused_range(), (3, 1)); // 天
-        assert_eq!(s.set_focus(99), Err(SessionError::InvalidIndex));
-    }
-
-    #[test]
-    fn test_resize_extends_focused_clause() {
-        // [今日は][天][木] の文節0を1文字伸ばす → 読み「きょうはて」
-        let (mut s, dict) = converting_session("kyouhatenki");
-        s.resize(1, &dict, &SimpleConnectionCost, 5, None).unwrap();
-        assert_eq!(s.clauses()[0].yomi, "きょうはて");
-        assert_eq!(s.focus(), 0);
-        // 全文節の読みを連結すると元のかなに戻る
-        let all: String = s.clauses().iter().map(|c| c.yomi.as_str()).collect();
-        assert_eq!(all, "きょうはてんき");
-    }
-
-    #[test]
-    fn test_resize_rejects_last_clause_extend() {
-        let (mut s, dict) = converting_session("kyouha");
-        // 1文節のみ → 最後の文節は伸縮不可
-        assert_eq!(
-            s.resize(1, &dict, &SimpleConnectionCost, 5, None),
-            Err(SessionError::InvalidResize)
-        );
-    }
-
-    #[test]
-    fn test_revert_returns_to_input_with_kana() {
-        let (mut s, _dict) = converting_session("kyouha");
-        s.revert().unwrap();
-        assert_eq!(s.state(), SessionState::Input);
-        assert_eq!(s.preedit(), "きょうは");
-    }
-
-    #[test]
-    fn test_commit_converting_returns_selection_and_resets() {
-        let (mut s, _dict) = converting_session("kyouha");
-        assert_eq!(s.commit(None), "今日は");
-        assert_eq!(s.state(), SessionState::Input);
-        assert_eq!(s.preedit(), "");
-    }
-
-    #[test]
-    fn test_commit_input_returns_kana_with_flush() {
-        let mut s = Session::new();
-        feed_str(&mut s, "kyoun"); // pending "n"
-        assert_eq!(s.commit(None), "きょうん");
-        assert_eq!(s.preedit(), "");
-    }
-
-    #[test]
-    fn test_convert_applies_learning() {
-        let dict = HashMapDict::test_dict();
-        let mut store = LearningStore::new(16);
-        store.record("きょうは", "京は");
-        let mut s = Session::new();
-        feed_str(&mut s, "kyouha");
-        s.convert(&dict, &SimpleConnectionCost, 5, Some(&store))
-            .unwrap();
-        assert_eq!(s.clauses()[0].candidates[0], "京は");
-        assert_eq!(s.preedit(), "京は");
-    }
-
-    #[test]
-    fn test_commit_records_learning_and_next_convert_uses_it() {
-        let dict = HashMapDict::test_dict();
-        let mut store = LearningStore::new(16);
-        let (mut s, _dict) = converting_session("kyouha");
-        let idx = s.clauses()[0]
-            .candidates
-            .iter()
-            .position(|c| c == "京は")
-            .unwrap();
-        s.select(0, idx).unwrap();
-        s.commit(Some(&mut store));
-        assert_eq!(store.get("きょうは"), Some("京は"));
-
-        let mut s2 = Session::new();
-        feed_str(&mut s2, "kyouha");
-        s2.convert(&dict, &SimpleConnectionCost, 5, Some(&store))
-            .unwrap();
-        assert_eq!(s2.preedit(), "京は");
-    }
-
-    #[test]
-    fn test_reset_clears_everything() {
-        let (mut s, _dict) = converting_session("kyouha");
-        s.reset();
-        assert_eq!(s.state(), SessionState::Input);
-        assert_eq!(s.preedit(), "");
-        assert!(s.clauses().is_empty());
-    }
 }

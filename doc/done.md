@@ -420,3 +420,15 @@
 - よかったこと: probe crate (scratchpad) で feed 列→出力を一括で見る手順が、仕様の粗さをテストケースにそのまま落とせた
 - 判断: 未確定子音の扱いは mozc 準拠 (preedit に英字として残す)。捨てる方が「きれい」に見えるが、入力が黙って失われる方が害が大きい
 - 残課題: なし
+
+### T161 preedit カーソル ✓ (2026-08-23)
+- やったこと:
+    - Session にカーソル (kana 内バイト位置) を導入。`move_cursor` / `set_cursor` / `delete_forward` / `cursor` を追加し、feed・backspace はカーソル位置で動く。未確定ローマ字はカーソル位置に表示され、カーソル移動・変換・Delete の前に flush される
+    - `focused_range` は Input 中にカーソル位置 (長さ 0) を返すので、ホストはそのまま caret 表示に使える
+    - C API: `jamo_session_cursor` / `jamo_session_move_cursor` / `jamo_session_set_cursor` / `jamo_session_delete_forward`。include/jamo.h 再生成
+    - session.rs / capi.rs のテストを `session/tests.rs` / `capi/tests.rs` に分離
+- 変更したファイル: jamo-core/src/session.rs, jamo-core/src/session/tests.rs (新規), jamo-core/src/capi.rs, jamo-core/src/capi/tests.rs (新規), jamo-core/include/jamo.h, doc/done.md
+- よかったこと: preedit を「かな + カーソル位置の pending」と定義し直すだけで、表示文字列・caret・挿入・削除が全て同じ式で書けた
+- 判断: カーソルは文字単位 (chunk 単位ではない)。「きょ」を 1 単位で消す案は MS-IME/mozc と違う手触りになるため却下。生ローマ字の保持は T162 で読みからの逆変換により実現する (chunk 方式は不要)
+- 残課題: なし
+
