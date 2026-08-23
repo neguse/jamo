@@ -16,7 +16,7 @@
 | 5 | 進行中 | Windows IME |
 | 8 | 進行中 | 変換精度・C API v2 (T130-T134 完了) |
 | 9 | バックログ | 省メモリ辞書 (ゼロコピー v3、T140 完了)。主KPI: 物理メモリ ~2MB での変換動作 (mmap)。短期の必要なしと判断し保留 |
-| 10 | 進行中 | 入力体験 (キー一打の手触り): 英字モード、preedit カーソル、数字、候補整形、文脈学習、lite-dm2x 追随 |
+| 10 | 完了 (実機未検証) | 入力体験 (キー一打の手触り): T160-T165 完了。lite-dm2x 側は host ハーネス (`just test-ime`) で検証済み、DM250 実機は未確認 |
 
 ## Iter 5: Windows IME
 
@@ -109,15 +109,22 @@ convert/clause_count/clause_yomi/candidate_count/candidate/selected/select/
 focus/set_focus/resize/revert/commit/reset)。
 状態機械は jamo-core/src/session.rs (プラットフォーム非依存、キーイベント
 処理は含まない)。返却文字列は次の呼び出しまで有効で解放不要。
+Iter 10 で追加: preedit カーソル (`cursor/move_cursor/set_cursor/
+delete_forward`)、一時英字モード (`is_alpha/set_alpha`、大文字入力で自動 on)、
+文字種変換 (`transform` + `JAMO_TRANSFORM_*`: ひらがな/カタカナ/半角英字/
+全角英字)、部分確定 (`commit_prefix`)。学習は直前文節の表層を文脈に持つ
+(TSV 3 列、旧 2 列も読める)。
 commit 学習 (learning.rs の読み→表層 LRU、エンジン単位で全セッション共有)
 を内蔵し、`jamo_engine_save_user_data` / `jamo_engine_load_user_data` で
 ホスト提供パス (DM250 は SD) に永続化できる。
-ヘッダは cbindgen 生成 (include/jamo.h)。lite-dm2x 側の追随
-(api_jamo.c / ime.lua / abi_smoke.c) は未着手。
+ヘッダは cbindgen 生成 (include/jamo.h、`~/.cargo/bin/cbindgen --config
+jamo-core/cbindgen.toml -o jamo-core/include/jamo.h jamo-core`)。lite-dm2x 側
+(api_jamo.c / ime.lua) は rev 7a8ecad に追随済み。Windows の composition.rs は
+独自状態機械のままで Session の新機能 (英字モード・カーソル・transform) は未対応。
 
 ## テスト
 
-全182テスト通過 (2026-08-18 実測、cargo test)
+全236テスト通過 (2026-08-23 実測、cargo test)
 
 ## プロジェクト構成
 
@@ -155,7 +162,11 @@ jamo/
 
 ## 1.0 後の課題
 
-- T022 bigram LM (mozc 辞書採用で優先度低下。残る文脈依存誤りの解消用)
+- T022 bigram LM (mozc 辞書採用で優先度低下。残る文脈依存誤りの解消用。
+  mozc OSS の collocation.txt はスタブで連語データは無い。当面は文脈つき学習 T164 で対処)
+- 予測変換 (入力途中の候補提示)。Iter 10 では射程外とした
+- Windows composition.rs を Session に乗せ換え (英字モード・カーソル・transform を Windows でも)
+- 日付・時刻候補 (きょう → 2026/08/23)、全角数字入力の数字ノード化
 - 組み込み向け軽量辞書ビルド (mozc 79.7MB の低頻度語削減)
 - T060 trigram LM
 - T061 NN リランキング
