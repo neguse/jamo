@@ -516,3 +516,55 @@ fn test_resize_and_reconvert() {
         }
     }
 }
+
+// ---- T163: 数字と候補整形 ----
+
+#[test]
+fn test_number_run_is_one_token_with_variants() {
+    let dict = HashMapDict::test_dict();
+    let input = "2026ねん";
+    let mut lattice = Lattice::build(input, &dict);
+    let result = decode_nbest(&mut lattice, input, &SimpleConnectionCost, 5);
+    let first = &result.clauses[0];
+    assert!(
+        first.yomi.starts_with("2026"),
+        "数字列は1トークン: {:?}",
+        result.clauses
+    );
+    let c = &first.candidates;
+    assert_eq!(c[0].chars().take(4).collect::<String>(), "2026");
+    for v in ["２０２６", "二〇二六", "二千二十六", "2,026"] {
+        assert!(
+            c.iter().any(|s| s.starts_with(v)),
+            "{v} が候補にあるはず: {c:?}"
+        );
+    }
+}
+
+#[test]
+fn test_number_variants_keep_suffix() {
+    // 「6ねん」→ 候補の数字部分だけ置き換わり、付属語はそのまま
+    let mut dict = HashMapDict::test_dict();
+    dict.add("ねん", "年", 1, 1, -3000, POS_FUNCTION);
+    let input = "6ねん";
+    let mut lattice = Lattice::build(input, &dict);
+    let result = decode_nbest(&mut lattice, input, &SimpleConnectionCost, 5);
+    assert_eq!(result.clauses.len(), 1);
+    let c = &result.clauses[0].candidates;
+    assert_eq!(c[0], "6年");
+    assert_eq!(c[1], "６年");
+    assert_eq!(c[2], "六年");
+}
+
+#[test]
+fn test_function_word_alternatives_are_not_clause_candidates() {
+    // 「は」の同音異義 (葉) は文節候補「今日葉」として並べない (助詞ゆれのゴミ)
+    let mut dict = HashMapDict::test_dict();
+    dict.add("は", "葉", 0, 0, -1000, POS_CONTENT);
+    let mut lattice = Lattice::build("きょうは", &dict);
+    let result = decode_nbest(&mut lattice, "きょうは", &SimpleConnectionCost, 5);
+    let c = &result.clauses[0].candidates;
+    assert!(c.contains(&"今日は".to_string()), "{c:?}");
+    assert!(c.contains(&"京は".to_string()), "{c:?}");
+    assert!(!c.contains(&"今日葉".to_string()), "{c:?}");
+}

@@ -1,6 +1,26 @@
 use crate::dict::{Dictionary, POS_CONTENT};
 
 const UNKNOWN_WORD_COST: i64 = 30_000;
+/// 辞書に数詞がないときの数字列ノードのコスト (1文字未知語の連鎖より十分良い)
+const NUMBER_FALLBACK_COST: i64 = 5_000;
+
+/// 数字列ノードの (left_id, right_id, word_cost)。
+/// 辞書の数詞エントリ ("1" か「一」) から品詞 ID とコストを借りる
+fn number_template(dict: &dyn Dictionary) -> (u16, u16, i64) {
+    for (yomi, surface) in [("1", "1"), ("いち", "一")] {
+        let found = dict
+            .common_prefix_search(yomi)
+            .into_iter()
+            .filter(|(len, _)| *len == yomi.len())
+            .flat_map(|(_, entries)| entries)
+            .filter(|e| e.surface == surface)
+            .min_by_key(|e| e.cost);
+        if let Some(e) = found {
+            return (e.left_id, e.right_id, e.cost as i64);
+        }
+    }
+    (0, 0, NUMBER_FALLBACK_COST)
+}
 
 /// ラティスノード
 #[derive(Debug, Clone)]
@@ -59,8 +79,33 @@ impl Lattice {
 
         // 各文字位置から辞書引き。未知語でも入力を落とさないため、1文字未知語ノードも入れる。
         let char_positions: Vec<(usize, char)> = input.char_indices().collect();
+        let number = input
+            .bytes()
+            .any(|b| b.is_ascii_digit())
+            .then(|| number_template(dict));
         for (i, &(char_start, ch)) in char_positions.iter().enumerate() {
             let remaining = &input[char_start..];
+
+            // 数字列は 1 トークン (2026 が 2|0|2|6 に割れないように)
+            if let Some((left_id, right_id, cost)) = number
+                && ch.is_ascii_digit()
+                && !(i > 0 && char_positions[i - 1].1.is_ascii_digit())
+            {
+                let run_len = remaining.bytes().take_while(u8::is_ascii_digit).count();
+                let idx = nodes.len();
+                nodes.push(Node {
+                    start: char_start,
+                    end: char_start + run_len,
+                    surface: remaining[..run_len].to_string(),
+                    left_id,
+                    right_id,
+                    word_cost: cost,
+                    pos_type: POS_CONTENT,
+                    total_cost: i64::MAX,
+                    prev: None,
+                });
+                ends_at[char_start + run_len].push(idx);
+            }
             let results = dict.common_prefix_search(remaining);
             for (match_len, entries) in results {
                 let byte_end = char_start + match_len;

@@ -1,4 +1,4 @@
-use crate::dict::POS_CONTENT;
+use crate::dict::{POS_CONTENT, POS_FUNCTION};
 use crate::lattice::Lattice;
 
 /// 接続コスト: 前ノードの right_id と 次ノードの left_id から接続コストを返す
@@ -279,6 +279,24 @@ fn push_kana_fallbacks(candidates: &mut Vec<String>, yomi: &str) {
     }
 }
 
+/// 読みが数字列で始まる文節に、先頭候補の数字部分を置き換えた表記候補
+/// (全角・漢数字・位取り・桁区切り) を 2 位以降に差し込む
+fn push_number_variants(candidates: &mut Vec<String>, yomi: &str) {
+    let Some(digits) = crate::number::leading_digits(yomi) else {
+        return;
+    };
+    let Some(rest) = candidates[0].strip_prefix(digits) else {
+        return;
+    };
+    let rest = rest.to_string();
+    for (i, v) in crate::number::variants(digits).into_iter().enumerate() {
+        let cand = format!("{v}{rest}");
+        if !candidates.contains(&cand) {
+            candidates.insert((1 + i).min(candidates.len()), cand);
+        }
+    }
+}
+
 /// 単語セグメントを文節にグルーピングする
 /// 自立語 (POS_CONTENT) が来たら新しい文節を開始
 /// 付属語 (POS_FUNCTION) は直前の文節に付く
@@ -310,10 +328,15 @@ pub fn group_clauses(segments: &[Segment]) -> Vec<Clause> {
                 .collect();
             let yomi: String = indices.iter().map(|&i| segments[i].yomi.as_str()).collect();
 
-            // 候補生成: ベスト + 各単語の代替候補を使ったバリエーション
+            // 候補生成: ベスト + 各自立語の代替候補を使ったバリエーション。
+            // 付属語 (文節2語目以降の助詞など) の同音異義は「期間画/期間蛾」のような
+            // ゴミ候補を量産するので使わない
             let mut candidates = vec![surface.clone()];
             for (pos, &seg_idx) in indices.iter().enumerate() {
                 let seg = &segments[seg_idx];
+                if pos > 0 && seg.pos_type == POS_FUNCTION {
+                    continue;
+                }
                 for alt in seg.candidates.iter().skip(1) {
                     let variant: String = indices
                         .iter()
@@ -331,6 +354,7 @@ pub fn group_clauses(segments: &[Segment]) -> Vec<Clause> {
                     }
                 }
             }
+            push_number_variants(&mut candidates, &yomi);
             push_kana_fallbacks(&mut candidates, &yomi);
 
             Clause {

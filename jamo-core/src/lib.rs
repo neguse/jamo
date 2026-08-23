@@ -15,6 +15,7 @@ pub mod lattice;
 pub mod learning;
 pub mod louds;
 pub mod mozc;
+pub mod number;
 pub mod romaji;
 pub mod session;
 pub mod viterbi;
