@@ -9,7 +9,7 @@
     "build-wasm": "cd ../jamo-core && wasm-pack build --target web --features wasm"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260302.0",
+    "@cloudflare/workers-types": "^5",
     "typescript": "^5",
     "wrangler": "^4"
   }

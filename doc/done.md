@@ -481,3 +481,10 @@
 - 判断: mozc の CommitOnlyFirstSegment (先頭 1 文節) ではなく「フォーカスまで」を確定する。左から順に直して Ctrl+↓ で確定する流れで、フォーカスが先頭なら同じ挙動になる
 - 残課題: なし
 
+### jamo-worker 依存の脆弱性解消 ✓ (2026-08-25)
+- やったこと: Dependabot の 20 件 (undici 15 / ws 2 / esbuild 1 / sharp 1、全て jamo-worker の wrangler 推移的依存) を wrangler 4.125.0 への更新で解消。wrangler の peer 要求に合わせ @cloudflare/workers-types を ^4 → ^5 に更新
+- 変更したファイル: jamo-worker/package.json, jamo-worker/package-lock.json, doc/done.md
+- よかったこと: 検証は `npm audit` (0 件)、`tsc --noEmit` (型互換 OK)、`wrangler deploy --dry-run` (バンドル OK) の3点で完結し、Rust 側は無関係と確認できた
+- 判断: devDependencies のみの更新で worker 実装コードは無変更。デプロイは含めない (ユーザーの手順)
+- 残課題: なし
+
