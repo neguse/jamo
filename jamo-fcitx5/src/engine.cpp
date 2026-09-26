@@ -105,6 +105,9 @@ private:
     InputContext *ic_;
     jamo_session_t *session_;
     int32_t lastTransform_ = -1;
+    // 候補一覧を出しているか。最初の Space は変換のみで、次の候補移動から出す
+    // (Hyprland / sway は preedit と同時に出した popup を古いカーソル位置に置く)
+    bool listShown_ = false;
 };
 
 class JamoCandidate : public CandidateWord {
@@ -255,6 +258,7 @@ bool JamoState::handleTransform(const Key &key) {
 bool JamoState::handleInput(const Key &key) {
     if (key.check(FcitxKey_space) || key.check(FcitxKey_Henkan)) {
         jamo_session_convert(session_, kNBest);
+        listShown_ = false;
     } else if (key.check(FcitxKey_Return) || key.check(FcitxKey_KP_Enter)) {
         commit();
         return true;
@@ -289,6 +293,7 @@ bool JamoState::handleConverting(const Key &key) {
     auto clauses = jamo_session_clause_count(session_);
     if (key.check(FcitxKey_Down, KeyState::Ctrl)) {
         commitString(str(jamo_session_commit_prefix(session_)));
+        listShown_ = false;
     } else if (key.check(FcitxKey_space) || key.check(FcitxKey_Henkan) ||
                key.check(FcitxKey_Down)) {
         moveCandidate(1);
@@ -301,15 +306,20 @@ bool JamoState::handleConverting(const Key &key) {
         jamo_session_revert(session_);
     } else if (key.check(FcitxKey_Left, KeyState::Shift)) {
         jamo_session_resize(session_, -1, kNBest);
+        listShown_ = false;
     } else if (key.check(FcitxKey_Right, KeyState::Shift)) {
         jamo_session_resize(session_, 1, kNBest);
+        listShown_ = false;
     } else if (key.check(FcitxKey_Left)) {
         jamo_session_set_focus(session_, focus > 0 ? focus - 1 : 0);
+        listShown_ = false;
     } else if (key.check(FcitxKey_Right)) {
         if (static_cast<int32_t>(focus) + 1 < clauses) {
             jamo_session_set_focus(session_, focus + 1);
         }
-    } else if (key.sym() >= FcitxKey_1 && key.sym() <= FcitxKey_9 &&
+        listShown_ = false;
+    } else if (listShown_ && key.sym() >= FcitxKey_1 &&
+               key.sym() <= FcitxKey_9 &&
                !key.states().testAny(KeyState::SimpleMask)) {
         int page = jamo_session_selected(session_, focus) / kPageSize;
         selectCandidate(page * kPageSize + (key.sym() - FcitxKey_1));
@@ -327,6 +337,7 @@ bool JamoState::handleConverting(const Key &key) {
 }
 
 void JamoState::moveCandidate(int delta) {
+    listShown_ = true;
     auto focus = static_cast<uint32_t>(jamo_session_focus(session_));
     int n = jamo_session_candidate_count(session_, focus);
     if (n > 0) {
@@ -392,7 +403,9 @@ void JamoState::update() {
         }
     }
     auto focus = static_cast<uint32_t>(jamo_session_focus(session_));
-    int n = converting() ? jamo_session_candidate_count(session_, focus) : 0;
+    int n = converting() && listShown_
+                ? jamo_session_candidate_count(session_, focus)
+                : 0;
     if (n >= 2) {
         auto list = std::make_unique<CommonCandidateList>();
         list->setPageSize(kPageSize);

@@ -516,3 +516,10 @@
 - よかったこと: headless sway を pacman パッケージの展開だけで root なしに動かせ、wtype / grim / swaymsg でユーザーのデスクトップに触れずに GUI 検証できた
 - 判断: `~/.local` に入れる (システム領域を汚さない)。fcitx5 はアドオン .so を FCITX_ADDON_DIRS からしか探さないため、Omarchy の omarchy-fcitx5.service に drop-in で環境変数を足す。Hyprland は headless 専用起動がなく (Compositor.cpp の TODO)、同一セッション内で起動すると DRM を掴みに行くため検証には使わない
 - 残課題: 候補 popup の初回位置ずれ (current.md)
+
+### jamo-fcitx5 候補一覧の 2 段階表示 ✓ (2026-09-27)
+- やったこと: 最初の Space は変換のみにし、次の Space / ↑↓ で候補一覧を出して候補を進める。文節移動・伸縮・部分確定で一覧を閉じる。一覧を出していない間の数字キーは確定して次の入力にする。E2E を更新
+- 変更したファイル: jamo-fcitx5/src/engine.cpp, jamo-fcitx5/test/testjamo.cpp, README.md, doc/tasks.md, doc/current.md, doc/done.md
+- よかったこと: 隔離環境 (headless sway) で mozc と並べて比べたことで、ずれの原因が jamo ではなくコンポジタの popup 再配置にあると切り分けられた
+- 判断: Hyprland (InputMethodPopup.cpp の updateBox) も sway (text_input.c) も popup を置き直すのは popup surface の map/commit のときだけで、クライアントのカーソル矩形更新では動かさない。preedit とカーソルが動くのと同時に一覧を出すと古い位置に出るので、デスクトップ IME の慣習 (mozc / MS-IME) どおり分ける。外部プロジェクトへの報告はしない (実験段階のため)。DM250 の即表示は小画面向けの別判断で変えない
+- 残課題: なし

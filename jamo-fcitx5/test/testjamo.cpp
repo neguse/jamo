@@ -119,17 +119,30 @@ void run(Instance *instance) {
     h.type("Rust");
     FCITX_ASSERT(h.key(Key(FcitxKey_Return)));
 
-    // 候補一覧の数字キーで選ぶ
+    // 最初の Space は変換のみ。次の Space で一覧を出して次候補へ進み、数字キーで選ぶ
     h.type("kyou");
+    FCITX_ASSERT(h.key(Key(FcitxKey_space)));
+    FCITX_ASSERT(!h.ic()->inputPanel().candidateList());
     FCITX_ASSERT(h.key(Key(FcitxKey_space)));
     auto list = h.ic()->inputPanel().candidateList();
     FCITX_ASSERT(list && list->size() >= 2);
-    auto second = list->candidate(1).text().toString();
-    FCITX_ASSERT(h.ic()->inputPanel().clientPreedit().toString() != second);
-    h.expect(second);
-    FCITX_ASSERT(h.key(Key(FcitxKey_2)));
-    FCITX_ASSERT(h.ic()->inputPanel().clientPreedit().toString() == second);
+    FCITX_ASSERT(h.ic()->inputPanel().clientPreedit().toString() ==
+                 list->candidate(1).text().toString());
+    auto first = list->candidate(0).text().toString();
+    h.expect(first);
+    FCITX_ASSERT(h.key(Key(FcitxKey_1)));
+    FCITX_ASSERT(h.ic()->inputPanel().clientPreedit().toString() == first);
     FCITX_ASSERT(h.key(Key(FcitxKey_Return)));
+
+    // 文節移動で一覧を閉じる
+    h.type("kyouhaiitenkidesune");
+    FCITX_ASSERT(h.key(Key(FcitxKey_space)));
+    FCITX_ASSERT(h.key(Key(FcitxKey_Down)));
+    FCITX_ASSERT(h.ic()->inputPanel().candidateList());
+    FCITX_ASSERT(h.key(Key(FcitxKey_Right)));
+    FCITX_ASSERT(!h.ic()->inputPanel().candidateList());
+    FCITX_ASSERT(h.key(Key(FcitxKey_Escape)));
+    FCITX_ASSERT(h.key(Key(FcitxKey_Escape)));
 
     // 変換中の文字入力は確定して次の入力を始める
     h.type("kyou");

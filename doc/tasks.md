@@ -392,6 +392,11 @@ GTK アプリ・Chromium・ターミナルで ローマ字 → 変換 → 候補
 - jamo-core を staticlib でリンクし、アドオンは単体の .so にする
 - 辞書: `$JAMO_DICT` → `$XDG_DATA_HOME/jamo/mozc.dict` → `ipadic.dict`。
   学習データ: `$XDG_DATA_HOME/jamo/user.dat`
+- 候補一覧は mozc / MS-IME 式: 最初の Space は変換のみ、次の Space / ↑↓ で一覧を出す。
+  文節移動・伸縮で一覧を閉じる。Hyprland / sway は text-input のカーソル矩形更新で popup を
+  置き直さないため、preedit とカーソルが動くのと同時に一覧を出すと古い位置に出る。
+  DM250 (ime.lua) の「最初の Space で即表示」は小画面向けの別判断でそのまま
+- 実験段階のリポジトリなので、外部プロジェクト (Hyprland 等) への issue / PR は出さない
 
 | # | タスク | 成果物 |
 |---|--------|--------|

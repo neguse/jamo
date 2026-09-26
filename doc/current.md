@@ -25,9 +25,9 @@
 (`ctest --test-dir jamo-fcitx5/build`)。この Linux 機 (Omarchy, Hyprland 0.56) に
 `~/.local` で導入済み (README の手順、DefaultIM=jamo、元設定は `~/.config/fcitx5/profile.bak-mozc`)。
 
-既知の問題: 最初の Space で候補 popup が変換前のカーソル位置 (ひらがな preedit の末尾) に出る。
-Hyprland / sway とも popup の再配置を popup surface の map/commit でしか行わず、クライアントの
-text-input カーソル矩形の更新では動かさないため (次のキー操作で正しい位置へ移る)。
+候補一覧は mozc / MS-IME 式 (最初の Space は変換のみ、次の Space / ↑↓ で表示)。
+Hyprland / sway は text-input のカーソル矩形の更新で popup を置き直さないため、preedit と
+同時に出すと古い位置に出る (tasks.md Iter 11 の設計決定)。
 
 ## Iter 5: Windows IME
 
