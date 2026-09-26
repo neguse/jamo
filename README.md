@@ -16,7 +16,7 @@
 ### 前提条件
 
 - Rust (edition 2024)
-- IPAdic 辞書データ (`data/ipadic/` に配置)
+- IPAdic 辞書データ: `./scripts/fetch-ipadic.sh` で `data/ipadic/` に取得
 
 ### ビルド
 

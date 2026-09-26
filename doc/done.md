@@ -488,3 +488,9 @@
 - 判断: devDependencies のみの更新で worker 実装コードは無変更。デプロイは含めない (ユーザーの手順)
 - 残課題: なし
 
+### CI: IPAdic 自動取得で cargo test を green に ✓ (2026-09-27)
+- やったこと: `scripts/fetch-ipadic.sh` を追加 (fetch-mozc.sh と同じ構成)。mecab リポジトリの mecab-ipadic (EUC-JP) を取得し UTF-8 へ変換して `data/ipadic/` に配置する。CI `check` ジョブに fetch + `dict build` ステップを追加し、`ime_server.rs` の `test_ime_server_convert`/`test_ime_server_predict` が実データで実行されるようにした (これまで CI に IPAdic が無く `read_dir ../data/ipadic: No such file or directory` で fail していた)。README のクイックスタート前提条件を fetch スクリプトの案内に更新
+- 変更したファイル: scripts/fetch-ipadic.sh (新規), .github/workflows/ci.yml, README.md, doc/done.md
+- よかったこと: `IpaDict::load` は `*.csv` を全読みして `matrix.def` を要求するだけなので、mecab-ipadic の CSV/def を機械的に EUC-JP→UTF-8 変換するだけで既存パーサがそのまま通った
+- 判断: ソースは `https://codeload.github.com/taku910/mecab/tar.gz/refs/heads/master` (mecab 本家、mecab-ipadic を同梱)。windows-build ジョブは同じコミット時点で `smoke jamo-ime` (`jamo serve --ime` 起動失敗) という別原因で落ちていたため、本タスクでは触らない
+- 残課題: windows-build の `smoke jamo-ime` 失敗は未調査・未修正 (ipadic とは無関係)
