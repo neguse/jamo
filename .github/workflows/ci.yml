@@ -44,3 +44,22 @@ jobs:
         run: cargo test -p jamo-core
       - name: test jamo-ime
         run: cargo test -p jamo-ime
+
+  fcitx5:
+    runs-on: ubuntu-latest
+    # FCITX_ADDON_FACTORY_V2 は fcitx5 5.1.12 以降。Ubuntu は古いので Arch で検証する
+    container: archlinux:latest
+    steps:
+      - name: install
+        run: pacman -Syu --noconfirm --needed base-devel cmake fcitx5 rust git curl
+      - uses: actions/checkout@v4
+      - name: mozc dict
+        run: |
+          sh scripts/fetch-mozc.sh
+          cargo run -p jamo-cli --release -- dict build --dict data/mozc -o data/mozc.dict
+      - name: build
+        run: |
+          cmake -S jamo-fcitx5 -B jamo-fcitx5/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build jamo-fcitx5/build
+      - name: test
+        run: ctest --test-dir jamo-fcitx5/build --output-on-failure

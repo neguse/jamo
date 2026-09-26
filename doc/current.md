@@ -17,6 +17,17 @@
 | 8 | 進行中 | 変換精度・C API v2 (T130-T134 完了) |
 | 9 | バックログ | 省メモリ辞書 (ゼロコピー v3、T140 完了)。主KPI: 物理メモリ ~2MB での変換動作 (mmap)。短期の必要なしと判断し保留 |
 | 10 | 完了 | 入力体験 (キー一打の手触り): T160-T165 完了。lite-dm2x の host ハーネス (`just test-ime`) と DM250 実機 (2026-08-25、keyin 注入 + screenshot) で検証済み |
+| 11 | 進行中 | Linux IME (fcitx5): T170 アドオン + E2E、T171 Omarchy 実機導入 |
+
+## Iter 11: Linux IME (fcitx5)
+
+`jamo-fcitx5/` (C++ アドオン、jamo-core を staticlib でリンク)。testfrontend による E2E
+(`ctest --test-dir jamo-fcitx5/build`)。この Linux 機 (Omarchy, Hyprland 0.56) に
+`~/.local` で導入済み (README の手順、DefaultIM=jamo、元設定は `~/.config/fcitx5/profile.bak-mozc`)。
+
+既知の問題: 最初の Space で候補 popup が変換前のカーソル位置 (ひらがな preedit の末尾) に出る。
+Hyprland / sway とも popup の再配置を popup surface の map/commit でしか行わず、クライアントの
+text-input カーソル矩形の更新では動かさないため (次のキー操作で正しい位置へ移る)。
 
 ## Iter 5: Windows IME
 

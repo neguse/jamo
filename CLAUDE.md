@@ -9,6 +9,7 @@
 
 - エンジン / CLI / サーバー / 辞書ビルド: Rust
 - CF Worker / DO: TypeScript
+- Linux IME: C++ (fcitx5 アドオン、CMake。jamo-core を staticlib でリンク)
 - テストフレームワーク: `cargo test`
 - HTTPサーバー: axum
 - WASM: wasm-pack
@@ -126,6 +127,9 @@ cargo fmt
 
 # 全チェック (pre-commitと同等)
 cargo fmt --check && cargo clippy -- -D warnings && cargo test
+
+# fcitx5 アドオン (E2E は data/mozc.dict を使う)
+cmake -S jamo-fcitx5 -B jamo-fcitx5/build && cmake --build jamo-fcitx5/build && ctest --test-dir jamo-fcitx5/build
 ```
 
 ## プロジェクト構成
@@ -135,6 +139,7 @@ jamo/
 ├── jamo-core/          # 変換エンジン (Rust lib, #[no_std] 対応)
 ├── jamo-cli/           # CLI・サーバー・辞書ビルド (Rust bin)
 ├── jamo-ime/           # Windows IME (TSF COM DLL)
+├── jamo-fcitx5/        # Linux IME (fcitx5 アドオン, C++)
 ├── jamo-worker/        # CF Worker/DO (TypeScript)
 ├── doc/                # ドキュメント (current, tasks, done)
 ├── data/               # 辞書データ (gitignore、fetchスクリプトで取得)

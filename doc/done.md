@@ -494,3 +494,15 @@
 - よかったこと: `IpaDict::load` は `*.csv` を全読みして `matrix.def` を要求するだけなので、mecab-ipadic の CSV/def を機械的に EUC-JP→UTF-8 変換するだけで既存パーサがそのまま通った
 - 判断: ソースは `https://codeload.github.com/taku910/mecab/tar.gz/refs/heads/master` (mecab 本家、mecab-ipadic を同梱)。windows-build ジョブは同じコミット時点で `smoke jamo-ime` (`jamo serve --ime` 起動失敗) という別原因で落ちていたため、本タスクでは触らない
 - 残課題: windows-build の `smoke jamo-ime` 失敗は未調査・未修正 (ipadic とは無関係)
+
+### T170 jamo-fcitx5 ✓ (2026-09-27)
+- やったこと:
+    - fcitx5 の入力メソッドアドオン `jamo-fcitx5/` を追加。キー割当は lite-dm2x の ime.lua (MS-IME 準拠) と同じで、Session 操作と preedit・候補一覧 (9 件ページング、1-9 選択、クリック選択) の表示だけを持つ
+    - jamo-core の crate-type に staticlib を追加し、CMake から cargo を呼んでリンクする
+    - cbindgen に `cpp_compat = true` を追加して jamo.h を再生成 (C++ から extern "C" で使える)
+    - fcitx5 testfrontend による E2E テスト (ひらがな確定、連文節変換、Escape 破棄、F7/F10、英字モード、数字キー選択、文節伸縮、変換中の打鍵で確定、IME 切替で確定)
+    - CI に Arch コンテナのジョブを追加 (mozc 辞書をビルドして E2E を実行)
+- 変更したファイル: jamo-fcitx5/, jamo-core/Cargo.toml, jamo-core/cbindgen.toml, jamo-core/include/jamo.h, .github/workflows/ci.yml, CLAUDE.md, doc/tasks.md, doc/current.md, doc/done.md
+- よかったこと: 手触りを Session に寄せた Iter 10 の設計のおかげで、ホストはキー対応表 + 表示の約 400 行で済んだ。testfrontend で確定文字列を順に照合でき、GUI なしで E2E が書ける
+- 判断: fcitx5 アドオンを選んだ (Omarchy の基盤。IBus / UIM / 自前 input-method-v2 を却下した理由は tasks.md Iter 11)。辞書はアドオン生成時にロードする (fcitx5 は property 登録時に既存の input context 全てに状態を作るため、遅延ロードだとセッションが辞書なしで作られる)。フォーカス喪失時は fcitx5 がクライアント preedit を確定済みなので破棄、入力メソッド切替時は確定する。FCITX_ADDON_FACTORY_V2 を使うため fcitx5 5.1.12 以上が必要 (Ubuntu 24.04 の 5.1.7 は非対応)
+- 残課題: 最初の Space で候補 popup が古いカーソル位置に出る (Hyprland/sway の popup 再配置の問題、current.md)。text-input-v3 では文節ごとの強調をクライアントが描けないアプリがある (Chromium は下線のみ)

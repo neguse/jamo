@@ -5,3 +5,4 @@ jamo-core/pkg/
 jamo-worker/node_modules/
 jamo-worker/dist/
 /data/mozc/
+/jamo-fcitx5/build/
