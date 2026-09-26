@@ -16,7 +16,7 @@ mkdir -p "$dir"
 for f in "$tmp"/mecab-master/mecab-ipadic/*.csv "$tmp"/mecab-master/mecab-ipadic/*.def; do
     name=$(basename "$f")
     echo "convert $name"
-    iconv -f EUC-JP -t UTF-8 "$f" -o "$dir/$name"
+    iconv -f EUC-JP -t UTF-8 "$f" > "$dir/$name"
 done
 
 echo "done: $dir"

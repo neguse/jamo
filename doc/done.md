@@ -525,8 +525,8 @@
 - 残課題: なし
 
 ### CI: windows-build の smoke に IPAdic を取得 ✓ (2026-09-27)
-- やったこと: windows-build ジョブで smoke の前に `scripts/fetch-ipadic.sh` を実行する
-- 変更したファイル: .github/workflows/ci.yml, doc/done.md
+- やったこと: windows-build ジョブで smoke の前に `scripts/fetch-ipadic.sh` を実行する。Git Bash の iconv (libiconv) は `-o` を持たないため、スクリプトの出力をリダイレクトに変更
+- 変更したファイル: .github/workflows/ci.yml, scripts/fetch-ipadic.sh, doc/done.md
 - よかったこと: `jamo-cli serve --ime --dict data/ipadic` をデータなしで起動すると `failed to load IPAdic` で panic し exit 101 になることを Linux で再現でき、CI の失敗 (`exited early with code 101`) と一致した
 - 判断: check ジョブと同じ取得スクリプトを Git Bash で使う (smoke は IPAdic のソースディレクトリを直接読む)
 - 残課題: なし
