@@ -506,3 +506,13 @@
 - よかったこと: 手触りを Session に寄せた Iter 10 の設計のおかげで、ホストはキー対応表 + 表示の約 400 行で済んだ。testfrontend で確定文字列を順に照合でき、GUI なしで E2E が書ける
 - 判断: fcitx5 アドオンを選んだ (Omarchy の基盤。IBus / UIM / 自前 input-method-v2 を却下した理由は tasks.md Iter 11)。辞書はアドオン生成時にロードする (fcitx5 は property 登録時に既存の input context 全てに状態を作るため、遅延ロードだとセッションが辞書なしで作られる)。フォーカス喪失時は fcitx5 がクライアント preedit を確定済みなので破棄、入力メソッド切替時は確定する。FCITX_ADDON_FACTORY_V2 を使うため fcitx5 5.1.12 以上が必要 (Ubuntu 24.04 の 5.1.7 は非対応)
 - 残課題: 最初の Space で候補 popup が古いカーソル位置に出る (Hyprland/sway の popup 再配置の問題、current.md)。text-input-v3 では文節ごとの強調をクライアントが描けないアプリがある (Chromium は下線のみ)
+
+### T171 Omarchy 実機導入 ✓ (2026-09-27)
+- やったこと:
+    - README に Linux IME (fcitx5) 節を追加 (ビルド・テスト、`~/.local` へのインストール、FCITX_ADDON_DIRS の drop-in、辞書と学習データの場所、操作方法)
+    - この Linux 機 (Omarchy, Hyprland 0.56) に導入し DefaultIM を jamo に切り替え。Chromium で ローマ字 → 変換 → 確定 を確認
+    - 画面を使わない隔離環境 (専用 D-Bus / runtime / config の headless sway + fcitx5) で GTK4・foot・Chromium を確認し、mozc と候補 popup の位置を比較
+- 変更したファイル: README.md, doc/done.md
+- よかったこと: headless sway を pacman パッケージの展開だけで root なしに動かせ、wtype / grim / swaymsg でユーザーのデスクトップに触れずに GUI 検証できた
+- 判断: `~/.local` に入れる (システム領域を汚さない)。fcitx5 はアドオン .so を FCITX_ADDON_DIRS からしか探さないため、Omarchy の omarchy-fcitx5.service に drop-in で環境変数を足す。Hyprland は headless 専用起動がなく (Compositor.cpp の TODO)、同一セッション内で起動すると DRM を掴みに行くため検証には使わない
+- 残課題: 候補 popup の初回位置ずれ (current.md)
