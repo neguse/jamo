@@ -523,3 +523,10 @@
 - よかったこと: 隔離環境 (headless sway) で mozc と並べて比べたことで、ずれの原因が jamo ではなくコンポジタの popup 再配置にあると切り分けられた
 - 判断: Hyprland (InputMethodPopup.cpp の updateBox) も sway (text_input.c) も popup を置き直すのは popup surface の map/commit のときだけで、クライアントのカーソル矩形更新では動かさない。preedit とカーソルが動くのと同時に一覧を出すと古い位置に出るので、デスクトップ IME の慣習 (mozc / MS-IME) どおり分ける。外部プロジェクトへの報告はしない (実験段階のため)。DM250 の即表示は小画面向けの別判断で変えない
 - 残課題: なし
+
+### CI: windows-build の smoke に IPAdic を取得 ✓ (2026-09-27)
+- やったこと: windows-build ジョブで smoke の前に `scripts/fetch-ipadic.sh` を実行する
+- 変更したファイル: .github/workflows/ci.yml, doc/done.md
+- よかったこと: `jamo-cli serve --ime --dict data/ipadic` をデータなしで起動すると `failed to load IPAdic` で panic し exit 101 になることを Linux で再現でき、CI の失敗 (`exited early with code 101`) と一致した
+- 判断: check ジョブと同じ取得スクリプトを Git Bash で使う (smoke は IPAdic のソースディレクトリを直接読む)
+- 残課題: なし
