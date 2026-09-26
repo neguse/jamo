@@ -494,3 +494,32 @@
 - よかったこと: `IpaDict::load` は `*.csv` を全読みして `matrix.def` を要求するだけなので、mecab-ipadic の CSV/def を機械的に EUC-JP→UTF-8 変換するだけで既存パーサがそのまま通った
 - 判断: ソースは `https://codeload.github.com/taku910/mecab/tar.gz/refs/heads/master` (mecab 本家、mecab-ipadic を同梱)。windows-build ジョブは同じコミット時点で `smoke jamo-ime` (`jamo serve --ime` 起動失敗) という別原因で落ちていたため、本タスクでは触らない
 - 残課題: windows-build の `smoke jamo-ime` 失敗は未調査・未修正 (ipadic とは無関係)
+
+### T170 jamo-fcitx5 ✓ (2026-09-27)
+- やったこと:
+    - fcitx5 の入力メソッドアドオン `jamo-fcitx5/` を追加。キー割当は lite-dm2x の ime.lua (MS-IME 準拠) と同じで、Session 操作と preedit・候補一覧 (9 件ページング、1-9 選択、クリック選択) の表示だけを持つ
+    - jamo-core の crate-type に staticlib を追加し、CMake から cargo を呼んでリンクする
+    - cbindgen に `cpp_compat = true` を追加して jamo.h を再生成 (C++ から extern "C" で使える)
+    - fcitx5 testfrontend による E2E テスト (ひらがな確定、連文節変換、Escape 破棄、F7/F10、英字モード、数字キー選択、文節伸縮、変換中の打鍵で確定、IME 切替で確定)
+    - CI に Arch コンテナのジョブを追加 (mozc 辞書をビルドして E2E を実行)
+- 変更したファイル: jamo-fcitx5/, jamo-core/Cargo.toml, jamo-core/cbindgen.toml, jamo-core/include/jamo.h, .github/workflows/ci.yml, CLAUDE.md, doc/tasks.md, doc/current.md, doc/done.md
+- よかったこと: 手触りを Session に寄せた Iter 10 の設計のおかげで、ホストはキー対応表 + 表示の約 400 行で済んだ。testfrontend で確定文字列を順に照合でき、GUI なしで E2E が書ける
+- 判断: fcitx5 アドオンを選んだ (Omarchy の基盤。IBus / UIM / 自前 input-method-v2 を却下した理由は tasks.md Iter 11)。辞書はアドオン生成時にロードする (fcitx5 は property 登録時に既存の input context 全てに状態を作るため、遅延ロードだとセッションが辞書なしで作られる)。フォーカス喪失時は fcitx5 がクライアント preedit を確定済みなので破棄、入力メソッド切替時は確定する。FCITX_ADDON_FACTORY_V2 を使うため fcitx5 5.1.12 以上が必要 (Ubuntu 24.04 の 5.1.7 は非対応)
+- 残課題: 最初の Space で候補 popup が古いカーソル位置に出る (Hyprland/sway の popup 再配置の問題、current.md)。text-input-v3 では文節ごとの強調をクライアントが描けないアプリがある (Chromium は下線のみ)
+
+### T171 Omarchy 実機導入 ✓ (2026-09-27)
+- やったこと:
+    - README に Linux IME (fcitx5) 節を追加 (ビルド・テスト、`~/.local` へのインストール、FCITX_ADDON_DIRS の drop-in、辞書と学習データの場所、操作方法)
+    - この Linux 機 (Omarchy, Hyprland 0.56) に導入し DefaultIM を jamo に切り替え。Chromium で ローマ字 → 変換 → 確定 を確認
+    - 画面を使わない隔離環境 (専用 D-Bus / runtime / config の headless sway + fcitx5) で GTK4・foot・Chromium を確認し、mozc と候補 popup の位置を比較
+- 変更したファイル: README.md, doc/done.md
+- よかったこと: headless sway を pacman パッケージの展開だけで root なしに動かせ、wtype / grim / swaymsg でユーザーのデスクトップに触れずに GUI 検証できた
+- 判断: `~/.local` に入れる (システム領域を汚さない)。fcitx5 はアドオン .so を FCITX_ADDON_DIRS からしか探さないため、Omarchy の omarchy-fcitx5.service に drop-in で環境変数を足す。Hyprland は headless 専用起動がなく (Compositor.cpp の TODO)、同一セッション内で起動すると DRM を掴みに行くため検証には使わない
+- 残課題: 候補 popup の初回位置ずれ (current.md)
+
+### jamo-fcitx5 候補一覧の 2 段階表示 ✓ (2026-09-27)
+- やったこと: 最初の Space は変換のみにし、次の Space / ↑↓ で候補一覧を出して候補を進める。文節移動・伸縮・部分確定で一覧を閉じる。一覧を出していない間の数字キーは確定して次の入力にする。E2E を更新
+- 変更したファイル: jamo-fcitx5/src/engine.cpp, jamo-fcitx5/test/testjamo.cpp, README.md, doc/tasks.md, doc/current.md, doc/done.md
+- よかったこと: 隔離環境 (headless sway) で mozc と並べて比べたことで、ずれの原因が jamo ではなくコンポジタの popup 再配置にあると切り分けられた
+- 判断: Hyprland (InputMethodPopup.cpp の updateBox) も sway (text_input.c) も popup を置き直すのは popup surface の map/commit のときだけで、クライアントのカーソル矩形更新では動かさない。preedit とカーソルが動くのと同時に一覧を出すと古い位置に出るので、デスクトップ IME の慣習 (mozc / MS-IME) どおり分ける。外部プロジェクトへの報告はしない (実験段階のため)。DM250 の即表示は小画面向けの別判断で変えない
+- 残課題: なし

@@ -371,6 +371,40 @@ T163, T164 は T160 以降で独立、T165 は全ての後
 
 ---
 
+## Iter 11: Linux IME (fcitx5)
+
+完了条件: Omarchy (Hyprland) で fcitx5 の入力メソッドとして jamo を選び、
+GTK アプリ・Chromium・ターミナルで ローマ字 → 変換 → 候補選択 → 確定 が通る。
+
+### 設計決定
+
+- **fcitx5 アドオンにする**。Omarchy は fcitx5 を基盤に置く (systemd service、
+  CapsLock compose、bar のレイアウト表示)。fcitx5 が text-input-v3 / XIM / Qt /
+  IBus 互換の各経路と候補 popup (input-popup-surface) を受け持つので、jamo は
+  エンジン 1 つを書くだけで全経路に届く
+- 却下: 自前の Wayland IM (input-method-v2 直実装) は seat に 1 つしか居られず
+  fcitx5 と排他。IBus は input-method-v2 対応済みだが fcitx5 を置き換える必要がある。
+  UIM の Wayland 版は input-method-v1 のみで Hyprland は非対応。fcitx5-lua は
+  エンジンを書けない (AddonInstance のみ)
+- ホスト (C++) は ime.lua と同じく「キー → Session 操作」の対応表と表示だけを持つ
+- IME on/off は fcitx5 の入力メソッド切替 (keyboard-us ↔ jamo) に任せる。
+  view ごとの状態も fcitx5 の input context 単位で得られる
+- jamo-core を staticlib でリンクし、アドオンは単体の .so にする
+- 辞書: `$JAMO_DICT` → `$XDG_DATA_HOME/jamo/mozc.dict` → `ipadic.dict`。
+  学習データ: `$XDG_DATA_HOME/jamo/user.dat`
+- 候補一覧は mozc / MS-IME 式: 最初の Space は変換のみ、次の Space / ↑↓ で一覧を出す。
+  文節移動・伸縮で一覧を閉じる。Hyprland / sway は text-input のカーソル矩形更新で popup を
+  置き直さないため、preedit とカーソルが動くのと同時に一覧を出すと古い位置に出る。
+  DM250 (ime.lua) の「最初の Space で即表示」は小画面向けの別判断でそのまま
+- 実験段階のリポジトリなので、外部プロジェクト (Hyprland 等) への issue / PR は出さない
+
+| # | タスク | 成果物 |
+|---|--------|--------|
+| T170 | jamo-fcitx5 | CMake + アドオン (キー割当・preedit・候補一覧・学習保存)、testfrontend による E2E テスト |
+| T171 | Omarchy 実機導入 | `~/.local` へのインストール手順、DefaultIM 切替、GTK / Chromium / ターミナルで確認 |
+
+---
+
 ## Iter 9: 省メモリ辞書 (ゼロコピー v3) — バックログ
 
 状態: 現行ユースケース (デスクトップ IME / CF DO 128MB 内 / DM250 RAM 1GB で

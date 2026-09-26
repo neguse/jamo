@@ -199,6 +199,60 @@ regsvr32 /u "C:\Program Files\Jamo\jamo_ime.dll"
 | Shift+←/→ | 文節伸縮 |
 | Backspace | 1文字削除 |
 
+## Linux IME (fcitx5)
+
+fcitx5 の入力メソッドアドオン。Wayland (text-input-v3)・XIM・Qt/GTK モジュールの各経路は fcitx5 が受け持つ。
+必要なもの: fcitx5 (5.1.12 以降、開発ヘッダ込み)、CMake、C++20 コンパイラ。
+
+### ビルドとテスト
+
+```bash
+cmake -S jamo-fcitx5 -B jamo-fcitx5/build -DCMAKE_BUILD_TYPE=Release
+cmake --build jamo-fcitx5/build
+ctest --test-dir jamo-fcitx5/build   # data/mozc.dict がなければ skip
+```
+
+### インストール (`~/.local`)
+
+```bash
+cmake --install jamo-fcitx5/build --prefix ~/.local
+mkdir -p ~/.local/share/jamo && cp data/mozc.dict ~/.local/share/jamo/
+```
+
+fcitx5 はアドオンの共有ライブラリを `FCITX_ADDON_DIRS` (既定 `/usr/lib/fcitx5`) からしか探さないので、
+fcitx5 の起動環境に追加する。Omarchy では systemd の drop-in を置く:
+
+```ini
+# ~/.config/systemd/user/omarchy-fcitx5.service.d/jamo.conf
+[Service]
+Environment=FCITX_ADDON_DIRS=%h/.local/lib/fcitx5:/usr/lib/fcitx5
+```
+
+```bash
+systemctl --user daemon-reload && systemctl --user restart omarchy-fcitx5.service
+```
+
+fcitx5-configtool などで入力メソッド「Jamo」を追加する。IME のオン/オフは fcitx5 の入力メソッド切替
+(既定 Ctrl+Space) で行う。アンインストールは上記ファイルを消して fcitx5 を再起動する。
+
+辞書は `$JAMO_DICT` → `~/.local/share/jamo/mozc.dict` → `~/.local/share/jamo/ipadic.dict` の順に探す。
+学習データは `~/.local/share/jamo/user.dat` に保存する。
+
+### 操作方法
+
+| キー | 入力中 | 変換中 |
+|------|--------|--------|
+| Space / 変換 | かな漢字変換 | 候補一覧を出して次の候補 |
+| ↑/↓ | — | 候補一覧を出して前/次の候補 |
+| 1-9 | — | 一覧の候補を選択 |
+| ←/→ | カーソル移動 | 文節移動 |
+| Shift+←/→ | — | 文節伸縮 |
+| Ctrl+↓ | — | フォーカス文節までを確定 |
+| Enter | ひらがなのまま確定 | 確定 |
+| Escape | 入力を破棄 | 変換取消 |
+| F6 / F7 / F9 / F10 | ひらがな / カタカナ / 全角英字 / 半角英字 | 同左 |
+| Shift+英字 | 英字モード (確定まで英字) | — |
+
 ## プロジェクト構成
 
 ```
@@ -206,6 +260,7 @@ jamo/
 ├── jamo-core/      変換エンジン (Rust lib)
 ├── jamo-cli/       CLI / HTTP サーバー / 辞書ビルド (Rust bin)
 ├── jamo-ime/       Windows IME (TSF DLL, cdylib)
+├── jamo-fcitx5/    Linux IME (fcitx5 アドオン, C++)
 ├── jamo-worker/    Cloudflare Worker / Durable Object (TypeScript)
 ├── data/           辞書データ
 │   ├── ipadic/     IPAdic ソース CSV

@@ -88,6 +88,10 @@ typedef struct jamo_engine_t jamo_engine_t;
  */
 typedef struct jamo_session_t jamo_session_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 /**
  * バイナリ辞書ファイルからエンジンを生成
  *
@@ -381,5 +385,9 @@ int32_t jamo_engine_save_user_data(const struct jamo_engine_t *engine, const cha
  */
 int32_t jamo_engine_load_user_data(const struct jamo_engine_t *engine,
                                    const char *path);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
 #endif  /* JAMO_H */
