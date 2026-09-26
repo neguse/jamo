@@ -17,7 +17,7 @@
 | 8 | 進行中 | 変換精度・C API v2 (T130-T134 完了) |
 | 9 | バックログ | 省メモリ辞書 (ゼロコピー v3、T140 完了)。主KPI: 物理メモリ ~2MB での変換動作 (mmap)。短期の必要なしと判断し保留 |
 | 10 | 完了 | 入力体験 (キー一打の手触り): T160-T165 完了。lite-dm2x の host ハーネス (`just test-ime`) と DM250 実機 (2026-08-25、keyin 注入 + screenshot) で検証済み |
-| 11 | 進行中 | Linux IME (fcitx5): T170 アドオン + E2E、T171 Omarchy 実機導入 |
+| 11 | 完了 | Linux IME (fcitx5): T170 アドオン + E2E (CI は Arch コンテナ)、T171 Omarchy 実機導入 |
 
 ## Iter 11: Linux IME (fcitx5)
 
