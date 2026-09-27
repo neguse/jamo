@@ -37,6 +37,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: build jamo-ime
         run: cargo build --release -p jamo-ime
+      - name: fetch IPAdic
+        shell: bash
+        run: ./scripts/fetch-ipadic.sh
       - name: smoke jamo-ime
         shell: pwsh
         run: ./scripts/ime-smoke.ps1 -Register
