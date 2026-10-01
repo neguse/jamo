@@ -160,39 +160,76 @@ pub fn decode_nbest(
 ) -> ConvertResult {
     let input_len = lattice.input_len;
 
-    // 前進: 各ノードの最適コストと最適前ノードを計算
+    // 前進: 各ノードの最適コストと最適前ノードを計算。
+    // 同じ位置で終わり right_id も同じ前ノード群は、次ノードから見ると最良コストの
+    // 1 つだけが意味を持つので、位置ごとに right_id で集約してから接続コストを引く
+    // (接続コスト参照の回数がノード数 × 前ノード数から ノード数 × 品詞数に減る)。
+    // 同じ開始位置・同じ left_id のノードは最良の前ノードも共通なので、
+    // (開始位置, left_id) ごとに「前ノード群 + 接続コスト」の最良を一度だけ求める。
+    let mut groups: Vec<Vec<(u16, i64, usize)>> = vec![Vec::new(); input_len + 1];
+    let mut best_by_left: Vec<Vec<(u16, i64, Option<usize>)>> = vec![Vec::new(); input_len + 1];
+    let bos = lattice.bos_index();
+    let mut relax = |lattice: &mut Lattice, groups: &[Vec<(u16, i64, usize)>], node_idx: usize| {
+        let node = &lattice.nodes[node_idx];
+        let (node_start, node_left_id, node_word_cost) = (node.start, node.left_id, node.word_cost);
+        let memo = &mut best_by_left[node_start];
+        let (best_in, best_prev) = match memo.iter().find(|m| m.0 == node_left_id) {
+            Some(&(_, cost, prev)) => (cost, prev),
+            None => {
+                let mut best_in = i64::MAX;
+                let mut best_prev = None;
+                for &(prev_right_id, prev_total, prev_idx) in &groups[node_start] {
+                    let total =
+                        prev_total.saturating_add(conn.cost(prev_right_id, node_left_id) as i64);
+                    if total < best_in {
+                        best_in = total;
+                        best_prev = Some(prev_idx);
+                    }
+                }
+                memo.push((node_left_id, best_in, best_prev));
+                (best_in, best_prev)
+            }
+        };
+        if best_prev.is_none() {
+            return;
+        }
+        let best_cost = best_in.saturating_add(node_word_cost);
+        let node = &mut lattice.nodes[node_idx];
+        if best_cost < node.total_cost {
+            node.total_cost = best_cost;
+            node.prev = best_prev;
+        }
+    };
     for pos in 0..=input_len {
-        let node_indices: Vec<usize> = lattice.ends_at[pos].clone();
-        for &node_idx in &node_indices {
-            if node_idx == lattice.bos_index() {
+        // 1. この位置で終わる (長さ > 0 の) ノードを、開始位置の集約から緩和
+        for i in 0..lattice.ends_at[pos].len() {
+            let node_idx = lattice.ends_at[pos][i];
+            if node_idx != bos && lattice.nodes[node_idx].start < pos {
+                relax(lattice, &groups, node_idx);
+            }
+        }
+        // 2. 確定したノード (+ BOS) を right_id ごとの最良に集約
+        let group = &mut groups[pos];
+        for &idx in &lattice.ends_at[pos] {
+            let node = &lattice.nodes[idx];
+            if node.total_cost == i64::MAX || (idx != bos && node.start >= pos) {
                 continue;
             }
-
-            let node_start = lattice.nodes[node_idx].start;
-            let node_left_id = lattice.nodes[node_idx].left_id;
-            let node_word_cost = lattice.nodes[node_idx].word_cost;
-
-            let prev_indices: Vec<usize> = lattice.ends_at[node_start].clone();
-            let mut best_cost = i64::MAX;
-            let mut best_prev = None;
-
-            for &prev_idx in &prev_indices {
-                let prev_total = lattice.nodes[prev_idx].total_cost;
-                if prev_total == i64::MAX {
-                    continue;
+            match group.iter_mut().find(|g| g.0 == node.right_id) {
+                Some(g) => {
+                    if node.total_cost < g.1 {
+                        g.1 = node.total_cost;
+                        g.2 = idx;
+                    }
                 }
-                let prev_right_id = lattice.nodes[prev_idx].right_id;
-                let c = conn.cost(prev_right_id, node_left_id) as i64;
-                let total = prev_total.saturating_add(c).saturating_add(node_word_cost);
-                if total < best_cost {
-                    best_cost = total;
-                    best_prev = Some(prev_idx);
-                }
+                None => group.push((node.right_id, node.total_cost, idx)),
             }
-
-            if best_cost < lattice.nodes[node_idx].total_cost {
-                lattice.nodes[node_idx].total_cost = best_cost;
-                lattice.nodes[node_idx].prev = best_prev;
+        }
+        // 3. 長さ 0 のノード (EOS) はこの位置の集約から緩和
+        for i in 0..lattice.ends_at[pos].len() {
+            let node_idx = lattice.ends_at[pos][i];
+            if node_idx != bos && lattice.nodes[node_idx].start == pos {
+                relax(lattice, &groups, node_idx);
             }
         }
     }

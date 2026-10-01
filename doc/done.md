@@ -545,3 +545,10 @@
 - よかったこと: 全セクションを `&[u8]` + from_le_bytes で読むので unsafe は mmap の 1 箇所だけで済み、アライメント要件もない。estimate-v3.py の事前見積もり (17.92 MB) と実測 (19.3 MB、差は索引の内蔵分) がほぼ一致し、設計を迷わず実装できた。IPAdic 検証でビルド側と検証側の両方が「空表層」を別々に検出でき、BitVec 境界表現の前提 (非空) を明文化できた
 - 判断: 行列の varint 圧縮案 (見積 2.7 MB) は参照にスキャンが要るので却下し、BitVec + rank (2.9 MB、O(1)) にした。`BinDict::open` は構造検証のみでファイル全体に触れない (mmap の遅延ロードを保つ)、深い検証は `verify` に分離。壊れた内容でも panic しない (境界検査つき) ことをテストで担保。unsafe は CLAUDE.md の「ffi.rs のみ」の例外として `BinDict::open` の mmap 1 箇所に限定 (SAFETY コメントつき)。Linux 6.x の large folio ページキャッシュでは mmap 辞書に 1 バイト触れると 2 MB 単位でマップされるため、組み込みの目安は tmpfs 計測 (4KB ページ) とした。v2 との互換 shim は作らない (pre-1.0)
 - 残課題: T150 (cgroup MemoryMax 下の完走テスト。この環境は cgroup v1 で memory コントローラなし)、T151 (tokens 5.2 MB + surface ids 2.7 MB の bit 符号化でデータ対データ 16.87 MB を下回る)、rank 索引のブロック内インターリーブで変換時のページ数削減。本家 mozc_server の変換込み RSS / レイテンシ / 精度は本家が動く環境で要計測。prefix_search (予測) は v2 より 1.5-2 倍遅い (select 2 回 + DFS でのキー復元)
+
+### Viterbi の接続コスト参照を集約・メモ化 ✓ (2026-10-01)
+- やったこと: 前進パスで、位置ごとに「そこで終わるノード」を right_id ごとの最良 1 つに集約し、さらに (開始位置, left_id) ごとに「前ノード群 + 接続コスト」の最良をメモ化。接続コスト参照回数が ノード数 × 前ノード数 から 異なり left_id 数 × 異なり right_id 数 に減る。長さ 0 ノード (EOS) はその位置の集約が確定してから緩和する。lattice のノード生成でエントリ表層を clone せず move。criterion (IPAdic): 短文 14.0 → 12.8us、中文 114 → 95us、長文 122 → 107us、複雑 157 → 131us (v2 比)。mozc 辞書の中文は 150 → 129us
+- 変更したファイル: jamo-core/src/viterbi.rs, jamo-core/src/lattice.rs, doc/current.md, doc/done.md
+- よかったこと: callgrind で `ConnectionCost::cost` が 38% と出て対処が一意に決まった。v3 の圧縮行列は 1 参照 4.7ns と v2 の密行列 (1.7ns) より遅いが、参照回数を減らすことで差し引き v2 より速くなった
+- 判断: 密行列をメモリに展開する案 (14 MB) はゴールに反するので却下。集約は Viterbi の最適性を変えない (同じ right_id の前ノードは次ノードから区別できない) ため精度テストは不変。同コストのタイブレークは変わりうるが候補順への影響はない
+- 残課題: 候補生成 (decode_nbest 後半) と文字列アロケーションが残りの主要コスト。prefix_search の select 回数削減

@@ -114,7 +114,7 @@ impl Lattice {
                     nodes.push(Node {
                         start: char_start,
                         end: byte_end,
-                        surface: entry.surface.clone(),
+                        surface: entry.surface,
                         left_id: entry.left_id,
                         right_id: entry.right_id,
                         word_cost: entry.cost as i64,
