@@ -1,12 +1,12 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use jamo_core::ipadic::IpaDict;
+use jamo_core::bindict::BinDict;
 use std::path::Path;
 
-fn load_dict() -> Option<IpaDict> {
+fn load_dict() -> Option<BinDict> {
     let paths = ["data/ipadic.dict", "../data/ipadic.dict"];
     for p in &paths {
         if Path::new(p).exists() {
-            return IpaDict::load_binary(Path::new(p)).ok();
+            return BinDict::open(Path::new(p)).ok();
         }
     }
     None
@@ -49,7 +49,7 @@ fn bench_dict_load(c: &mut Criterion) {
     };
 
     c.bench_function("dict_load", |b| {
-        b.iter(|| IpaDict::load_binary(Path::new(black_box(path))).unwrap())
+        b.iter(|| BinDict::open(Path::new(black_box(path))).unwrap())
     });
 }
 

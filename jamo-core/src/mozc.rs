@@ -160,7 +160,7 @@ mod tests {
     fn test_load_mozc_fixture() {
         let dir = std::env::temp_dir().join(format!("jamo-mozc-test-{}", std::process::id()));
         write_fixture(&dir);
-        let dict = load_mozc(&dir).unwrap();
+        let dict = load_mozc(&dir).unwrap().into_bindict().unwrap();
         fs::remove_dir_all(&dir).ok();
 
         assert_eq!(dict.pos_size(), 4);
@@ -194,7 +194,7 @@ mod tests {
             eprintln!("Skipping: data/mozc not found");
             return;
         }
-        let dict = load_mozc(dir).unwrap();
+        let dict = load_mozc(dir).unwrap().into_bindict().unwrap();
         let result = crate::convert_with_conn("きょうはいいてんきですね", &dict, &dict);
         let text: String = result.segments.iter().map(|s| s.surface.as_str()).collect();
         assert!(!text.is_empty());

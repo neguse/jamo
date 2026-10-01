@@ -405,11 +405,12 @@ GTK アプリ・Chromium・ターミナルで ローマ字 → 変換 → 候補
 
 ---
 
-## Iter 9: 省メモリ辞書 (ゼロコピー v3) — バックログ
+## Iter 9: 省メモリ辞書 (ゼロコピー v3) — T141-T149 完了 (2026-10-01)
 
-状態: 現行ユースケース (デスクトップ IME / CF DO 128MB 内 / DM250 RAM 1GB で
-実機動作中) は現状のメモリ使用で動いており、短期の必要はない。README の
-「省メモリ」看板は下ろした (2026-08-19)。この Iter の完了が看板を掲げ直す条件。
+状態: ゴール「mozc より省メモリ・高速で、変換精度は同等以上」(2026-10-01) を受けて
+着手。v3 は実装済みで、.dict 83.5 → 19.3 MB、peak RSS 152.6 → 17.9 MB (ext4) /
+9.5 MB (tmpfs 4KB ページ)、変換 15-25% 高速化、精度は不変 (doc/memory.md、doc/done.md)。
+残りは T150 の少メモリ動作検証 (cgroup) と T151 の bit 符号化。
 
 完了条件: 「省メモリ」の看板を実測で裏付ける。看板の定義は
 **物理メモリが少ないデバイスでも動かせること** (本家とのサイズ比較はプロキシ指標)。
@@ -442,21 +443,21 @@ GTK アプリ・Chromium・ターミナルで ローマ字 → 変換 → 候補
 | # | タスク | 成果物 |
 |---|--------|--------|
 | T140 | dict info | scripts/dict-breakdown.py の Rust 化。`jamo dict info` でセクション内訳表示 |
-| T141 | v3 フォーマット設計 | doc/dict-format.md v3: 終端フラグ BitVec + エントリ境界 BitVec (select で範囲)、(left,right,pos_type) 組の辞書化、ゼロコピー用アライメント |
-| T142 | v3 ライター/リーダー | write + from_bytes (整合性検証込み) + roundtrip テスト |
-| T143 | エンジン借用辞書対応 | dict/lattice/viterbi/session が参照エントリで動く。既存テスト全通過 |
-| T144 | CLI/serve mmap ロード | memmap2 導入、bench-memory.py で RSS 実測 |
-| T145 | WASM / C API / IPC 追随 | 各インターフェースの動作確認 |
-| T146 | 恒等表層の格納省略 | 読みから生成可能な表層 (31.7%) をフラグ化 |
-| T147 | 接続行列圧縮 | 行ごと最頻値デフォルト + 例外 (Δcol, zigzag Δcost) の varint。14.3→2.7MB (実測) |
-| T148 | 読みの1バイト符号化 | trie ラベルをかな符号表で1バイト化。ノード数 41.9% に減 (実測)。文字種 255 で1バイト上限ぎりぎり — 符号表にない文字のエスケープ設計込み |
-| T149 | 表層プール符号化 | 恒等除外 uniq 表層 (68.9万) を共有プール化し可変長文字符号化 (高頻度224字=1B)。8.3→3.9MB (実測) |
-| T150 | 少メモリ動作検証 | cgroup MemoryMax 下での変換完走テスト + ワーキングセット実測を bench-memory.py に追加。ページアクセス局所性の改善はこの実測に基づき採否判断 |
+| T141 ✓ | v3 フォーマット設計 | doc/dict-format.md v3: 終端フラグ BitVec + エントリ境界 BitVec (select で範囲)、(left,right,pos_type) 組の辞書化、8 バイト境界の TOC |
+| T142 ✓ | v3 ライター/リーダー | bindict::build + BinDict::from_vec/open (整合性検証込み) + roundtrip テスト |
+| T143 ✓ | エンジン借用辞書対応 | BinDict が Dictionary + ConnectionCost を実装。IpaDict はビルド専用に縮退、v2 (louds.rs / dict_stats.rs) は削除 |
+| T144 ✓ | CLI/serve mmap ロード | memmap2 導入 (MADV_RANDOM)、bench-memory.py を C ランチャー + --shm に改修 |
+| T145 ✓ | WASM / C API / IPC 追随 | wasm32 は from_vec、C API は open (mmap)、IPC サーバーは Arc<BinDict> |
+| T146 ✓ | 恒等表層の格納省略 | 読みそのもの / カタカナと一致する表層をトークンの 2 bit にした |
+| T147 ✓ | 接続行列圧縮 | 行ごと最頻値デフォルト + 例外 BitVec + コスト配列 (rank 1 回で O(1))。14.3→2.9MB。varint 案は参照にスキャンが要るので却下 |
+| T148 ✓ | 読みの1バイト符号化 | 頻度上位 255 文字を 1 バイト、表にない文字は 0 + UTF-8 でエスケープ。ノード数 4.39M → 1.84M |
+| T149 ✓ | 表層プール符号化 | 恒等除外 uniq 表層 (69.9万) を共有プール化し可変長文字符号化 (224 字 = 1B、7936 字 = 2B、残り 3B)。8.3→4.0MB |
+| T150 | 少メモリ動作検証 | tmpfs 計測は bench-memory.py --shm で可能 (mozc 辞書で 9.5 MB)。cgroup MemoryMax 下の完走テストは memory コントローラのある環境で実施。rank 索引のブロックへのインターリーブでページ数削減を検討 |
 | T151 | token/表層の bit 符号化 (v3.1) | combo ID の頻度順 Huffman + 同読み内 cost 差分 varint + 表層 Huffman。~15MB 見込みでデータ対データの本家超えを狙う。着手前に estimate で事前検証 |
 
-見積もり: v3 合計 **17.92MB** (scripts/estimate-v3.py、実データ算出)。
-内訳: trie 2.7 + token 7.8 + combo表 0.1 + 表層プール 4.6 + 行列 2.7。
-RSS ≈ 変換時ワーキングセット (mmap、T150 で実測) + rank/select 再構築 + 作業領域
+実測: v3 合計 **19.3MB** (`jamo dict info data/mozc.dict`、見積もり 17.92MB との差は
+rank 索引・select サンプルの内蔵 ~1.3MB)。内訳は doc/memory.md。
+RSS = 変換時に触れたページ (mmap) + 作業領域。rank/select 索引はファイル内蔵で再構築なし
 
 ### 依存関係
 

@@ -16,7 +16,7 @@ use std::ffi::{CStr, CString, c_char};
 use std::path::Path;
 use std::ptr;
 
-use crate::ipadic::IpaDict;
+use crate::bindict::BinDict;
 use crate::learning::LearningStore;
 use crate::session::{Session, SessionError, SessionState, Transform};
 
@@ -61,7 +61,7 @@ fn error_code(e: SessionError) -> i32 {
 
 /// 不透明なエンジンハンドル
 pub struct JamoCEngine {
-    dict: IpaDict,
+    dict: BinDict,
     /// 変換学習 (エンジン単位で全セッション共有)
     learning: RefCell<LearningStore>,
 }
@@ -82,7 +82,7 @@ pub unsafe extern "C" fn jamo_engine_open(dict_path: *const c_char) -> *mut Jamo
         Ok(s) => s,
         Err(_) => return ptr::null_mut(),
     };
-    match IpaDict::load_binary(Path::new(path)) {
+    match BinDict::open(Path::new(path)) {
         Ok(dict) => Box::into_raw(Box::new(JamoCEngine {
             dict,
             learning: RefCell::new(LearningStore::default()),

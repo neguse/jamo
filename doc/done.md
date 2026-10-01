@@ -530,3 +530,18 @@
 - よかったこと: `jamo-cli serve --ime --dict data/ipadic` をデータなしで起動すると `failed to load IPAdic` で panic し exit 101 になることを Linux で再現でき、CI の失敗 (`exited early with code 101`) と一致した
 - 判断: check ジョブと同じ取得スクリプトを Git Bash で使う (smoke は IPAdic のソースディレクトリを直接読む)
 - 残課題: なし
+
+### T141-T149 辞書フォーマット v3 (ゼロコピー、mmap) ✓ (2026-10-01)
+- やったこと:
+    - ゴール「mozc より省メモリ・高速で、精度は同等以上」を受けて Iter 9 に着手。jamo-core/src/bindict/ (format / build / charcode) を新設し、ファイルレイアウト = メモリレイアウトの v3 を実装。`BinDict` は Vec または mmap (memmap2、MADV_RANDOM) のバイト列を所有し、Dictionary + ConnectionCost を借用参照で実装する
+    - 読みは頻度上位 255 文字の 1 バイト符号 (表外は 0 + UTF-8) で LOUDS trie 化 (ノード 4.39M → 1.84M)。終端フラグ + エントリ境界 BitVec で select から範囲を引く。(left,right,pos_type) は combo 表 (14 bit)、読みと同一の表層 (ひらがな/カタカナ) は 2 bit フラグ、残りは可変長文字符号化 (224 字 = 1B / 7936 字 = 2B / 残り 3B) した共有プールを u24 で参照
+    - 接続行列は行最頻値デフォルト + 例外 BitVec + コスト配列 (rank 1 回で O(1))。14.3 → 2.9 MB
+    - bitvec.rs を書き直し: `BitVec` (ビルド・直列化) と `BitView` (借用 rank/select)。rank 索引は 256bit ごとに u64 1 本 (累積 u32 + 小ブロック u8×3 をインターリーブ)、select は 64 個ごとのサンプル + ブロック走査。索引もファイルに含めロード時再構築なし。接続行列用に select サンプルなしの直列化も用意
+    - `IpaDict` はソース (IPAdic CSV / mozc TSV) パース + v3 ビルド専用に縮退。v2 (louds.rs、dict_stats.rs、v2 read/write)、scripts/estimate-v3.py を削除。CLI / serve / IME IPC / C API / WASM / bench / accuracy_test を `BinDict` に乗せ換え (C API は mmap、wasm32 は from_vec)。`jamo dict info` は v3 セクション内訳 + `verify` (全 BitVec 索引・参照範囲の深い検証)
+    - IPAdic の "," は CSV 分割で表層が空になり、空表層はプール境界 BitVec で表現できないためソース側で捨て、ビルド側はエラーにする
+    - scripts/bench-memory.py: fork+exec+wait4 の C ランチャーで計測 (Python fork は子に ~10MB の RSS を引き継ぎ下限になる)、`--shm` で tmpfs (4KB ページ) 計測
+    - 実測 (mozc 辞書): .dict 83.5 → 19.3 MB、peak RSS 152.6 → 17.9 MB (ext4) / 9.5 MB (tmpfs)、ロード 0.20 s → 0.1 ms。IPAdic は 19.2 → 8.4 MB、42.9 → 11.2 / 7.0 MB。精度は mozc Top-1 89.3% / Top-5 98.2%、IPAdic 42.9% / 71.4% で v2 と同一 (v2 を同一データで再計測して確認)
+- 変更したファイル: jamo-core/src/bindict/{mod,format,build,charcode,tests}.rs (新規), jamo-core/src/bitvec.rs, jamo-core/src/ipadic.rs, jamo-core/src/ipadic/tests.rs, jamo-core/src/lib.rs, jamo-core/src/capi.rs, jamo-core/src/wasm.rs, jamo-core/src/mozc.rs, jamo-core/src/louds.rs (削除), jamo-core/src/dict_stats.rs (削除), jamo-core/Cargo.toml, jamo-core/benches/convert_bench.rs, jamo-core/tests/accuracy_test.rs, jamo-cli/src/{main,serve,ime_server}.rs, jamo-cli/tests/cli_test.rs, scripts/bench-memory.py, scripts/estimate-v3.py (削除), doc/dict-format.md, doc/memory.md, doc/tasks.md, doc/current.md, README.md, doc/done.md
+- よかったこと: 全セクションを `&[u8]` + from_le_bytes で読むので unsafe は mmap の 1 箇所だけで済み、アライメント要件もない。estimate-v3.py の事前見積もり (17.92 MB) と実測 (19.3 MB、差は索引の内蔵分) がほぼ一致し、設計を迷わず実装できた。IPAdic 検証でビルド側と検証側の両方が「空表層」を別々に検出でき、BitVec 境界表現の前提 (非空) を明文化できた
+- 判断: 行列の varint 圧縮案 (見積 2.7 MB) は参照にスキャンが要るので却下し、BitVec + rank (2.9 MB、O(1)) にした。`BinDict::open` は構造検証のみでファイル全体に触れない (mmap の遅延ロードを保つ)、深い検証は `verify` に分離。壊れた内容でも panic しない (境界検査つき) ことをテストで担保。unsafe は CLAUDE.md の「ffi.rs のみ」の例外として `BinDict::open` の mmap 1 箇所に限定 (SAFETY コメントつき)。Linux 6.x の large folio ページキャッシュでは mmap 辞書に 1 バイト触れると 2 MB 単位でマップされるため、組み込みの目安は tmpfs 計測 (4KB ページ) とした。v2 との互換 shim は作らない (pre-1.0)
+- 残課題: T150 (cgroup MemoryMax 下の完走テスト。この環境は cgroup v1 で memory コントローラなし)、T151 (tokens 5.2 MB + surface ids 2.7 MB の bit 符号化でデータ対データ 16.87 MB を下回る)、rank 索引のブロック内インターリーブで変換時のページ数削減。本家 mozc_server の変換込み RSS / レイテンシ / 精度は本家が動く環境で要計測。prefix_search (予測) は v2 より 1.5-2 倍遅い (select 2 回 + DFS でのキー復元)

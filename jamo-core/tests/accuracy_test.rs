@@ -3,6 +3,8 @@
 
 use std::path::Path;
 
+use jamo_core::bindict::BinDict;
+
 /// テストコーパスのカテゴリ
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Category {
@@ -322,35 +324,36 @@ fn test_corpus() -> Vec<TestCase> {
     ]
 }
 
-fn load_ipadic() -> Option<jamo_core::ipadic::IpaDict> {
-    let candidates = ["../data/ipadic", "data/ipadic"];
-    for p in candidates {
+fn load_ipadic() -> Option<BinDict> {
+    for p in ["../data/ipadic.dict", "data/ipadic.dict"] {
         let path = Path::new(p);
         if path.exists() {
-            return jamo_core::ipadic::IpaDict::load(path).ok();
+            return BinDict::open(path).ok();
         }
     }
-    let bin_candidates = ["../data/ipadic.dict", "data/ipadic.dict"];
-    for p in bin_candidates {
+    for p in ["../data/ipadic", "data/ipadic"] {
         let path = Path::new(p);
         if path.exists() {
-            return jamo_core::ipadic::IpaDict::load_binary(path).ok();
+            return jamo_core::ipadic::IpaDict::load(path)
+                .ok()?
+                .into_bindict()
+                .ok();
         }
     }
     None
 }
 
-fn load_mozc_dict() -> Option<jamo_core::ipadic::IpaDict> {
+fn load_mozc_dict() -> Option<BinDict> {
     for p in ["../data/mozc.dict", "data/mozc.dict"] {
         let path = Path::new(p);
         if path.exists() {
-            return jamo_core::ipadic::IpaDict::load_binary(path).ok();
+            return BinDict::open(path).ok();
         }
     }
     for p in ["../data/mozc", "data/mozc"] {
         let path = Path::new(p);
         if path.join("id.def").exists() {
-            return jamo_core::mozc::load_mozc(path).ok();
+            return jamo_core::mozc::load_mozc(path).ok()?.into_bindict().ok();
         }
     }
     None

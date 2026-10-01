@@ -7,7 +7,7 @@
 ## 特徴
 
 - **ポータブル** — 単一の Rust コアを C API (組み込み) / CLI / HTTP API / WASM / Windows IME (TSF) から利用可能
-- **小さいエンジン** — LOUDS trie + Viterbi デコーダ、WASM バイナリ 144KB。実行時メモリの実測は [doc/memory.md](doc/memory.md)
+- **小さいエンジン** — ゼロコピー辞書 (mmap) + LOUDS trie + Viterbi デコーダ。mozc 辞書で .dict 19.3MB、変換時 peak RSS 9.5MB (4KB ページ環境)、WASM バイナリ 144KB。実測は [doc/memory.md](doc/memory.md)
 - **辞書ソース** — mozc dictionary_oss (推奨、Top-1 89.3%) / IPAdic + NEologd 等のマージ
 - **Cloudflare Workers 対応** — Durable Objects でユーザーごとに独立した辞書・学習データ
 
@@ -274,13 +274,13 @@ jamo/
 
 | 項目 | 値 |
 |------|------|
-| 変換 (短文) | 10 us |
-| 変換 (中文) | 87 us |
-| 変換 (長文) | 99 us |
-| 辞書ロード | 64 ms |
-| 予測変換 | 1-2 us |
+| 変換 (短文) | 13 us |
+| 変換 (中文) | 95 us |
+| 変換 (長文) | 107 us |
+| 辞書ロード | 0.1 ms (mmap) |
+| 予測変換 | 2-6 us |
 | WASM バイナリ | 144 KB |
-| 辞書バイナリ | 19.2 MB |
+| 辞書バイナリ | 8.4 MB (IPAdic) / 19.3 MB (mozc) |
 
 ## ライセンス
 

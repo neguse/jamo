@@ -1,11 +1,11 @@
 use wasm_bindgen::prelude::*;
 
-use crate::ipadic::IpaDict;
+use crate::bindict::BinDict;
 
 /// WASM 向けエンジン: バイナリ辞書を保持して変換を行う
 #[wasm_bindgen]
 pub struct JamoEngine {
-    dict: IpaDict,
+    dict: BinDict,
 }
 
 #[wasm_bindgen]
@@ -13,8 +13,7 @@ impl JamoEngine {
     /// バイナリ辞書データからエンジンを生成
     #[wasm_bindgen(constructor)]
     pub fn new(dict_bytes: &[u8]) -> Result<JamoEngine, JsError> {
-        let mut cursor = std::io::Cursor::new(dict_bytes);
-        let dict = IpaDict::load_binary_from_reader(&mut cursor)
+        let dict = BinDict::from_vec(dict_bytes.to_vec())
             .map_err(|e| JsError::new(&format!("failed to load dict: {e}")))?;
         Ok(JamoEngine { dict })
     }

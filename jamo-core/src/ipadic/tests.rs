@@ -1,4 +1,5 @@
 use super::*;
+use crate::dict::Dictionary;
 
 #[test]
 fn test_katakana_to_hiragana() {
@@ -37,7 +38,10 @@ fn test_convert_with_ipadic() {
         return;
     }
 
-    let dict = IpaDict::load(ipadic_dir).expect("failed to load IPAdic");
+    let dict = IpaDict::load(ipadic_dir)
+        .expect("failed to load IPAdic")
+        .into_bindict()
+        .expect("failed to build");
     let result = crate::convert_with_conn("きょうはいいてんきですね", &dict, &dict);
 
     let text: String = result.segments.iter().map(|s| s.surface.as_str()).collect();
@@ -74,6 +78,7 @@ fn test_load_ipadic() {
     assert!(dict.pos_size() > 1000, "IPAdic should have >1000 POS IDs");
 
     // 「きょう」で引けるはず
+    let dict = dict.into_bindict().expect("failed to build");
     let results = dict.common_prefix_search("きょう");
     assert!(!results.is_empty(), "「きょう」がヒットするはず");
 
@@ -96,7 +101,10 @@ fn test_clauses_with_ipadic() {
         return;
     }
 
-    let dict = IpaDict::load(ipadic_dir).expect("failed to load IPAdic");
+    let dict = IpaDict::load(ipadic_dir)
+        .expect("failed to load IPAdic")
+        .into_bindict()
+        .expect("failed to build");
     let result = crate::convert_nbest("わたしはがくせいです", &dict, &dict, 5);
 
     let clause_surfaces: Vec<&str> = result.clauses.iter().map(|c| c.surface.as_str()).collect();
@@ -161,14 +169,17 @@ fn test_load_merge() {
 
     // マージしてロード
     let merged = IpaDict::load_merge(ipadic_dir, &[extra_csv.as_path()]).expect("failed to merge");
+    let merged_pos = merged.pos_size();
+    let merged_conn = merged.connection_cost(0, 0);
+    let merged_vocab = merged.vocab_size();
+    let merged = merged.into_bindict().expect("failed to build");
 
     // 追加エントリ分だけ語彙が増えている
     assert!(
-        merged.vocab_size() > base_vocab,
-        "merged {} should be > base {}",
-        merged.vocab_size(),
-        base_vocab
+        merged_vocab > base_vocab,
+        "merged {merged_vocab} should be > base {base_vocab}"
     );
+    assert_eq!(merged.vocab_size(), merged_vocab);
 
     // 追加したエントリが検索可能
     let results = merged.common_prefix_search("すまーとふぉん");
@@ -195,7 +206,8 @@ fn test_load_merge() {
     );
 
     // 接続コスト行列はベースと同一
-    assert_eq!(merged.pos_size(), base.pos_size());
+    assert_eq!(merged_pos, base.pos_size());
+    assert_eq!(merged_conn, base.connection_cost(0, 0));
     assert_eq!(merged.connection_cost(0, 0), base.connection_cost(0, 0));
 
     // クリーンアップ
@@ -220,8 +232,10 @@ fn test_load_merge_directory() {
         .unwrap();
 
     // ディレクトリごとマージ
-    let merged =
-        IpaDict::load_merge(ipadic_dir, &[tmp_dir.as_path()]).expect("failed to merge dir");
+    let merged = IpaDict::load_merge(ipadic_dir, &[tmp_dir.as_path()])
+        .expect("failed to merge dir")
+        .into_bindict()
+        .expect("failed to build");
 
     let results = merged.common_prefix_search("ぶろっくちぇーん");
     let surfaces: Vec<&str> = results
@@ -258,16 +272,16 @@ fn test_binary_roundtrip() {
         file_size as f64 / 1_048_576.0
     );
 
-    // バイナリから読み込み
-    let dict2 = IpaDict::load_binary(&tmp).expect("failed to load binary");
+    // mmap で開いたものと、メモリ上で構築したものが一致する
+    let dict2 = BinDict::open(&tmp).expect("failed to open binary");
+    dict2.verify().expect("binary should verify");
+    let dict1 = dict.into_bindict().expect("failed to build");
 
-    // 統計が一致
-    assert_eq!(dict.vocab_size(), dict2.vocab_size());
-    assert_eq!(dict.reading_count(), dict2.reading_count());
-    assert_eq!(dict.pos_size(), dict2.pos_size());
+    assert_eq!(dict1.vocab_size(), dict2.vocab_size());
+    assert_eq!(dict1.reading_count(), dict2.reading_count());
+    assert_eq!(dict1.pos_size(), dict2.pos_size());
 
-    // 変換結果が一致
-    let result1 = crate::convert_with_conn("わたしはがくせいです", &dict, &dict);
+    let result1 = crate::convert_with_conn("わたしはがくせいです", &dict1, &dict1);
     let result2 = crate::convert_with_conn("わたしはがくせいです", &dict2, &dict2);
     let text1: String = result1
         .segments
@@ -281,57 +295,11 @@ fn test_binary_roundtrip() {
         .collect();
     assert_eq!(text1, text2);
 
-    // 接続コストが一致
-    assert_eq!(dict.connection_cost(0, 0), dict2.connection_cost(0, 0));
+    assert_eq!(dict1.connection_cost(0, 0), dict2.connection_cost(0, 0));
     assert_eq!(
-        dict.connection_cost(100, 200),
+        dict1.connection_cost(100, 200),
         dict2.connection_cost(100, 200)
     );
 
-    // クリーンアップ
     let _ = fs::remove_file(&tmp);
-}
-
-#[test]
-fn test_binary_rejects_invalid_bit_block_count() {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(MAGIC);
-    write_u32(&mut bytes, VERSION).unwrap();
-    write_u32(&mut bytes, 65).unwrap(); // bits_len needs 2 blocks
-    write_u32(&mut bytes, 1).unwrap(); // but only 1 block is declared
-
-    let err = match read_binary(&mut std::io::Cursor::new(bytes)) {
-        Ok(_) => panic!("corrupted binary should fail"),
-        Err(err) => err,
-    };
-    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-}
-
-#[test]
-fn test_binary_rejects_invalid_terminal_range() {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(MAGIC);
-    write_u32(&mut bytes, VERSION).unwrap();
-
-    // LOUDS for super-root + root: bits [1, 0, 0]
-    write_u32(&mut bytes, 3).unwrap();
-    write_u32(&mut bytes, 1).unwrap();
-    bytes.extend_from_slice(&1u64.to_le_bytes());
-
-    write_u32(&mut bytes, 2).unwrap(); // labels
-    bytes.extend_from_slice(&[0, 0]);
-
-    write_u32(&mut bytes, 2).unwrap(); // terminal
-    write_u32(&mut bytes, u32::MAX).unwrap();
-    write_u32(&mut bytes, 0).unwrap();
-    write_u32(&mut bytes, 0).unwrap();
-    write_u32(&mut bytes, 1).unwrap(); // points past entries
-
-    write_u32(&mut bytes, 0).unwrap(); // entries
-
-    let err = match read_binary(&mut std::io::Cursor::new(bytes)) {
-        Ok(_) => panic!("corrupted binary should fail"),
-        Err(err) => err,
-    };
-    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 }

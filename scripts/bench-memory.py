@@ -2,11 +2,14 @@
 """かな漢字変換エンジンの peak RSS を比較計測する。
 
 使い方:
-  scripts/bench-memory.py [--with-anthy] [--with-mozc-server] [--work DIR]
+  scripts/bench-memory.py [--with-anthy] [--with-mozc-server] [--shm [DIR]] [--work DIR]
 
 - jamo: target/release/jamo-cli で変換1回 (辞書ロード込み) を実行し、
-  子プロセスの peak RSS (getrusage RUSAGE_CHILDREN) を計測する。
+  子プロセスの peak RSS (wait4 の ru_maxrss) を計測する。
   data/mozc.dict, data/ipadic.dict のうち存在するものが対象。
+  --shm で辞書を tmpfs にコピーして計測する (ext4 のページキャッシュは
+  large folio で 2MB 単位にマップされるため、mmap 辞書の RSS が実際に
+  触れたページ数より大きく出る)。
 - --with-anthy: anthy-unicode をソース取得・ビルドし、付属テスト
   (約550件の変換) 実行時の peak RSS を計測する。要 cc/make。
 - --with-mozc-server: Arch Linux の fcitx5-mozc パッケージを work 内に
@@ -23,6 +26,7 @@
 import argparse
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -40,8 +44,56 @@ ANTHY_URL = (
 MOZC_PKG_URL = "https://archlinux.org/packages/extra/x86_64/fcitx5-mozc/download/"
 
 
-def measure_run(cmd, cwd=None):
+PEAKRSS_C = r"""
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/resource.h>
+int main(int argc, char **argv) {
+    pid_t pid = fork();
+    if (pid == 0) { execvp(argv[1], argv + 1); _exit(127); }
+    int status; struct rusage ru;
+    wait4(pid, &status, 0, &ru);
+    fprintf(stderr, "PEAK_RSS_KB %ld\n", ru.ru_maxrss);
+    return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+}
+"""
+
+_LAUNCHER = None
+
+
+def launcher(work):
+    """fork+exec+wait4 だけの小さなランチャーを work にビルドして返す。
+
+    Python から fork すると、exec 前の子プロセスが Python 自身の RSS (~10MB) を
+    引き継いで ru_maxrss の下限になる。C のランチャーなら下限は ~1MB。
+    cc がなければ None (Python 計測にフォールバック、下限 ~10MB)。
+    """
+    global _LAUNCHER
+    if _LAUNCHER is not None:
+        return _LAUNCHER or None
+    exe = os.path.join(work, "peakrss")
+    src = exe + ".c"
+    if not os.path.exists(exe):
+        with open(src, "w") as f:
+            f.write(PEAKRSS_C)
+        r = subprocess.run(["cc", "-O2", "-o", exe, src], capture_output=True)
+        if r.returncode != 0:
+            _LAUNCHER = ""
+            return None
+    _LAUNCHER = exe
+    return exe
+
+
+def measure_run(cmd, cwd=None, work=None):
     """コマンドを1回実行し、子プロセス peak RSS を MB で返す。"""
+    exe = launcher(work) if work else None
+    if exe:
+        r = subprocess.run([exe, *cmd], cwd=cwd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"measured command failed: {cmd}")
+        line = [l for l in r.stderr.splitlines() if l.startswith("PEAK_RSS_KB ")][-1]
+        return int(line.split()[1]) / 1024
     helper = (
         "import subprocess,resource,sys,json\n"
         "r=subprocess.run(sys.argv[1:],capture_output=True)\n"
@@ -113,7 +165,7 @@ def fetch(url, dest):
         subprocess.run(["curl", "-fsSL", "-o", dest, url], check=True)
 
 
-def bench_jamo(results):
+def bench_jamo(results, work, shm):
     if not os.path.exists(JAMO_CLI):
         print("skip jamo: build first with `cargo build --release -p jamo-cli`",
               file=sys.stderr)
@@ -124,9 +176,19 @@ def bench_jamo(results):
             print(f"skip jamo+{name}: {dict_path} not found", file=sys.stderr)
             continue
         size_mb = os.path.getsize(dict_path) / 1e6
-        peak = measure_run([JAMO_CLI, "convert", "--dict", dict_path, CONVERT_TEXT])
-        results.append((f"jamo + {name}.dict", f"{size_mb:.1f} MB (.dict)",
-                        peak, "変換1回込み"))
+        cond = "変換1回込み (mmap"
+        if shm:
+            # ext4 等のページキャッシュは large folio で 2MB 単位にマップされ、
+            # 触れたページ数より RSS が大きく出る。tmpfs は 4KB ページなので
+            # fault-around (64KB) 単位の実ワーキングセットに近い値になる
+            shm_path = os.path.join(shm, f"{name}.dict")
+            shutil.copyfile(dict_path, shm_path)
+            dict_path = shm_path
+            cond += ", tmpfs 4KB ページ"
+        cond += ")"
+        peak = measure_run([JAMO_CLI, "convert", "--dict", dict_path, CONVERT_TEXT],
+                           work=work)
+        results.append((f"jamo + {name}.dict", f"{size_mb:.1f} MB (.dict)", peak, cond))
 
 
 def bench_anthy(work, results):
@@ -142,7 +204,7 @@ def bench_anthy(work, results):
                        cwd=src, check=True, capture_output=True)
     dic = os.path.join(src, "mkanthydic", "anthy.dic")
     dic_mb = os.path.getsize(dic) / 1e6 if os.path.exists(dic) else 0
-    peak = measure_run(["./anthy", "--quiet"], cwd=os.path.join(src, "test"))
+    peak = measure_run(["./anthy", "--quiet"], cwd=os.path.join(src, "test"), work=work)
     results.append((f"Anthy (anthy-unicode {ANTHY_VER})",
                     f"{dic_mb:.1f} MB (anthy.dic)" if dic_mb else "-",
                     peak, "付属テスト約550件の変換込み"))
@@ -173,12 +235,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--with-anthy", action="store_true")
     parser.add_argument("--with-mozc-server", action="store_true")
+    parser.add_argument("--shm", nargs="?", const="/dev/shm", default=None,
+                        help="辞書を tmpfs (既定 /dev/shm) にコピーして 4KB ページで計測")
     parser.add_argument("--work", default=os.path.join(REPO, "target", "bench-memory"))
     args = parser.parse_args()
 
     os.makedirs(args.work, exist_ok=True)
     results = []
-    bench_jamo(results)
+    bench_jamo(results, args.work, args.shm)
     if args.with_anthy:
         bench_anthy(args.work, results)
     if args.with_mozc_server:

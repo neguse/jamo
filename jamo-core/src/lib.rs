@@ -6,14 +6,13 @@ pub mod ipc;
 
 pub mod capi;
 
+pub mod bindict;
 pub mod bitvec;
 pub mod dict;
-pub mod dict_stats;
 pub mod ipadic;
 pub mod kana;
 pub mod lattice;
 pub mod learning;
-pub mod louds;
 pub mod mozc;
 pub mod number;
 pub mod romaji;
