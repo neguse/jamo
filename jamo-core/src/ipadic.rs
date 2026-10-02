@@ -28,6 +28,8 @@ pub struct IpaDict {
     num_pos: usize,
     /// 語彙数
     vocab_size: usize,
+    /// 品詞 ID ごとの文節境界ペナルティ (mozc boundary.def)。空なら全て 0
+    boundary: Vec<(u16, u16)>,
 }
 
 impl IpaDict {
@@ -41,7 +43,7 @@ impl IpaDict {
             fs::read_to_string(&matrix_path).map_err(|e| format!("read matrix.def: {e}"))?;
         let (num_pos, matrix) = parse_matrix(&matrix_content)?;
 
-        build_from_entries(raw_entries, matrix, num_pos)
+        build_from_entries(raw_entries, matrix, num_pos, Vec::new())
     }
 
     /// ベース辞書 + 追加CSVをマージしてロード (NEologd等の統合用)
@@ -70,7 +72,7 @@ impl IpaDict {
             fs::read_to_string(&matrix_path).map_err(|e| format!("read matrix.def: {e}"))?;
         let (num_pos, matrix) = parse_matrix(&matrix_content)?;
 
-        build_from_entries(raw_entries, matrix, num_pos)
+        build_from_entries(raw_entries, matrix, num_pos, Vec::new())
     }
 
     /// 接続コスト (right_id of prev, left_id of next)
@@ -100,6 +102,7 @@ impl IpaDict {
             keys: &self.keys,
             matrix: &self.matrix,
             num_pos: self.num_pos,
+            boundary: &self.boundary,
         })
     }
 
@@ -133,6 +136,7 @@ pub(crate) fn build_from_entries(
     raw_entries: Vec<RawEntry>,
     matrix: Vec<i16>,
     num_pos: usize,
+    boundary: Vec<(u16, u16)>,
 ) -> Result<IpaDict, String> {
     let mut grouped: HashMap<String, Vec<Entry>> = HashMap::new();
     for raw in &raw_entries {
@@ -159,6 +163,7 @@ pub(crate) fn build_from_entries(
         matrix,
         num_pos,
         vocab_size,
+        boundary,
     })
 }
 

@@ -40,6 +40,7 @@
 | 11 surface bounds             |  プール中の各表層の先頭
 | 12 conn matrix                |  接続行列
 | 13 stats                      |  語彙数・読み数
+| 14 boundary                   |  文節境界ペナルティ (品詞 ID ごと)
 +-------------------------------+
 ```
 
@@ -49,9 +50,9 @@
 |--------|------|------|------|
 | 0 | 4 | bytes | Magic: `JAMO` |
 | 4 | 4 | u32 | Version: `3` |
-| 8 | 4 | u32 | セクション数: `14` |
+| 8 | 4 | u32 | セクション数: `15` |
 | 12 | 4 | u32 | 予約 (0) |
-| 16 | 8 × 14 | (u32 offset, u32 len)[] | 各セクションのファイル先頭からのオフセットと長さ |
+| 16 | 8 × 15 | (u32 offset, u32 len)[] | 各セクションのファイル先頭からのオフセットと長さ |
 
 セクションは TOC の順に並び、重ならない。TOC 外の末尾バイトは無視する。
 
@@ -155,6 +156,16 @@ unary (`1...10`) で BFS 順に並べる。ノード番号は 0 = スーパー�
 | 4 | u32 | vocab_size: トークン数 |
 | 4 | u32 | reading_count: 読みの数 |
 
+## 14: Boundary
+
+文節境界ペナルティ (mozc の boundary.def、jamo-core/src/boundary.rs)。長さ 0 (表なし、
+全て 0) か `4 × num_pos`。
+
+| Size | Type | 説明 |
+|------|------|------|
+| 2 | u16 | prefix: 変換キーの先頭に来るノード (left_id = この ID) の単語コストに足す |
+| 2 | u16 | suffix: 変換キーの末尾に来るノード (right_id = この ID) の単語コストに足す |
+
 ## 検証
 
 - `BinDict::open` / `from_vec`: ヘッダ、TOC、各セクションのサイズと個数の整合
@@ -183,6 +194,7 @@ surface chars        0.02 MB    0.1%
 surface pool         3.99 MB   20.7%
 surface bounds       0.87 MB    4.5%
 conn matrix          2.89 MB   15.0%
+boundary             0.01 MB    0.1%
 trie nodes 1837020, tokens 1289076, id combos 11370, pool surfaces 698652,
 matrix 2672x2672 (exceptions 884398)
 ```
@@ -198,4 +210,4 @@ IPAdic は 19.2 MB → 8.4 MB。
 |---------|---------|
 | 1 | 初版。LOUDS trie + 接続コスト行列。 |
 | 2 | Entry に pos_type (1 byte) を追加。 |
-| 3 | ゼロコピー化。読み 1 バイト符号、終端/境界 BitVec、combo 表、恒等表層フラグ、表層プール符号化、行列の例外圧縮、rank/select 索引の内蔵。v2 は読めない。 |
+| 3 | ゼロコピー化。読み 1 バイト符号、終端/境界 BitVec、combo 表、恒等表層フラグ、表層プール符号化、行列の例外圧縮、rank/select 索引の内蔵。v2 は読めない。同日に boundary セクション (14) を追加。 |

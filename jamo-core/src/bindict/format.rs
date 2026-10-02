@@ -14,7 +14,7 @@ use crate::bitvec::{BitRef, BitView};
 
 pub const MAGIC: &[u8; 4] = b"JAMO";
 pub const VERSION: u32 = 3;
-pub const SECTION_COUNT: usize = 14;
+pub const SECTION_COUNT: usize = 15;
 pub const HEADER_LEN: usize = 16 + SECTION_COUNT * 8;
 
 pub const SEC_READING_CHARS: usize = 0;
@@ -31,6 +31,7 @@ pub const SEC_SURFACE_POOL: usize = 10;
 pub const SEC_SURFACE_BOUNDS: usize = 11;
 pub const SEC_MATRIX: usize = 12;
 pub const SEC_STATS: usize = 13;
+pub const SEC_BOUNDARY: usize = 14;
 
 pub const SECTION_NAMES: [&str; SECTION_COUNT] = [
     "reading chars",
@@ -47,11 +48,14 @@ pub const SECTION_NAMES: [&str; SECTION_COUNT] = [
     "surface bounds",
     "conn matrix",
     "stats",
+    "boundary",
 ];
 
 pub const TOKEN_LEN: usize = 4;
 pub const COMBO_LEN: usize = 5;
 pub const SURFACE_ID_LEN: usize = 3;
+/// 境界ペナルティ 1 品詞分 (u16 prefix, u16 suffix)
+pub const BOUNDARY_LEN: usize = 4;
 /// combo ID は 14 bit (上位 2 bit は表層種別)
 pub const MAX_COMBOS: usize = 1 << 14;
 pub const MAX_POS: usize = 8192;
@@ -179,6 +183,10 @@ impl Layout {
         let matrix = Self::parse_matrix(data, sections[SEC_MATRIX].clone())?;
 
         let (vocab_size, reading_count) = Self::parse_stats(data, sections[SEC_STATS].clone())?;
+        let boundary_len = sections[SEC_BOUNDARY].len();
+        if boundary_len != 0 && boundary_len != matrix.num_pos * BOUNDARY_LEN {
+            return Err(invalid("boundary section size mismatch"));
+        }
 
         Ok(Self {
             sections,

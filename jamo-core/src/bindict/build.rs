@@ -23,6 +23,8 @@ pub struct BuildInput<'a> {
     /// 接続コスト行列 [right_id * num_pos + left_id]
     pub matrix: &'a [i16],
     pub num_pos: usize,
+    /// 品詞 ID ごとの (PREFIX, SUFFIX) 境界ペナルティ。空なら全て 0
+    pub boundary: &'a [(u16, u16)],
 }
 
 struct BuildNode {
@@ -284,6 +286,21 @@ pub fn build(input: BuildInput<'_>) -> io::Result<Vec<u8>> {
     tmp.clear();
     tmp.extend_from_slice(&(stream.vocab as u32).to_le_bytes());
     tmp.extend_from_slice(&(keys.len() as u32).to_le_bytes());
+    w.section(&tmp);
+    tmp.clear();
+    if !input.boundary.is_empty() {
+        if input.boundary.len() != input.num_pos {
+            return Err(invalid(format!(
+                "boundary table size {} != num_pos {}",
+                input.boundary.len(),
+                input.num_pos
+            )));
+        }
+        for &(p, s) in input.boundary {
+            tmp.extend_from_slice(&p.to_le_bytes());
+            tmp.extend_from_slice(&s.to_le_bytes());
+        }
+    }
     w.section(&tmp);
     w.finish()
 }

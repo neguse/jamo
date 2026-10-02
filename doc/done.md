@@ -564,3 +564,15 @@
 - よかったこと: mozc_server が root で黙って abort する原因 (geteuid()==0 → tgkill SIGABRT) と、IPC が Command ではなく Input を生で送る形式であることを strace と本家ソース (unix_ipc.cc, session_server.cc) から特定でき、GUI なしで本家を駆動できた。large folio による RSS の水増しは drop_caches で 4KB ページ単位の実測に戻せた (1 バイト触れて 2048 kB → 4 kB)
 - 判断: 本家のレイテンシは IPC 往復込みで比較する (fcitx5-mozc も同じ経路で話すので実使用の値)。往復分 ~0.6 ms を差し引いても 10 倍以上差がある。protobuf ライブラリや grpcio-tools を requirements にしない (手符号化で十分)。zstd 展開は tar --zstd → zstd CLI の順で試す
 - 残課題: 56 文では統計的な差は言えない。大きいコーパスでの比較。本家の予測変換 (サジェスト) は比較対象外
+
+### T181 文節境界ペナルティ (mozc boundary.def の移植) ✓ (2026-10-02)
+- やったこと:
+    - 本家に負けていた単文節 4 件 (いく→いく、くる→くる、かく→各、かわ→側) の原因を特定: 非自立動詞 (〜ていく、コスト 0)、接頭詞「各」(コスト 0)、接尾辞「側」が単独で勝つ。本家は converter/segmenter の boundary データで、変換キー先頭のノードに品詞ごとの PREFIX ペナルティ (動詞,非自立 = 4000)、末尾のノードに SUFFIX ペナルティ (接頭詞 = 4000、名詞,接尾 = 700) を足している
+    - jamo-core/src/boundary.rs: boundary.def の規則 (`PREFIX|SUFFIX <品詞パターン> <コスト>`、`*` = 1 フィールド、`(a|b)` 選択、末尾カンマなしは直後がカンマか末尾) を本家 gen_boundary_data.py と同じ意味でマッチし、id.def から品詞 ID ごとの表を作る
+    - v3 に boundary セクション (14、u16 prefix + u16 suffix × num_pos、空なら 0) を追加。Dictionary trait に prefix_penalty / suffix_penalty (既定 0)、lattice 構築時に start == 0 のノードへ PREFIX、end == 入力長のノードへ SUFFIX を加算
+    - scripts/fetch-mozc.sh が boundary.def も取得。mozc ローダーは boundary.def があれば表を作る (IPAdic は 0)
+    - 結果: Top-1 50/56 → 54/56 (本家と同点)、Top-5 不変、IPAdic 不変。4 件とも本家と同じ答えになった
+- 変更したファイル: jamo-core/src/boundary.rs (新規), jamo-core/src/lib.rs, jamo-core/src/dict.rs, jamo-core/src/lattice.rs, jamo-core/src/bindict/{format,build,mod,tests}.rs, jamo-core/src/ipadic.rs, jamo-core/src/mozc.rs, scripts/fetch-mozc.sh, doc/dict-format.md, doc/current.md, doc/tasks.md, doc/done.md
+- よかったこと: 本家のコスト計算 (immutable_converter.cc の ApplyPrefixSuffixPenalty) を読んで同じ規則ファイルを移植したので、コーパスに合わせた個別調整なしで 4 件全部が本家と同じ答えになった。各 (接頭詞) は 7 フィールド素性に 8 フィールドの「SUFFIX … (各|約|…) 0」規則が当たらず 4000 になる、という本家の挙動も再現している
+- 判断: 辞書コストや接続行列には手を入れない (本家と同じデータ + 同じ規則で同じ答えが出ることを優先)。ペナルティは Lattice::build に入力される範囲の先頭/末尾に適用する (文節伸縮の再変換では各文節の端。文節が付属語で始まらないという意味で妥当)。正規表現 crate は入れず、`*` と選択だけの小さなマッチャで足りる
+- 残課題: 本家の segmenter (文節境界の可否ビット表) は未移植。jamo の文節分けは pos_type (自立/付属) のまま。残り 2 文は本家も同じ外し方で、文脈モデル (T022 bigram) の領域

@@ -13,5 +13,8 @@ for f in dictionary00.txt dictionary01.txt dictionary02.txt dictionary03.txt \
     echo "fetch $f"
     curl -fsSL "$base/$f" -o "$dir/$f"
 done
+# 文節の先頭/末尾に来る品詞へのペナルティ (本家 converter/segmenter の boundary データ)
+echo "fetch boundary.def"
+curl -fsSL "https://raw.githubusercontent.com/google/mozc/master/src/data/rules/boundary.def" -o "$dir/boundary.def"
 echo "done: $dir"
 echo "build: cargo run -p jamo-cli --release -- dict build --dict $dir -o data/mozc.dict"

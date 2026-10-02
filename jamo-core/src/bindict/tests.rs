@@ -48,7 +48,7 @@ fn sample_matrix() -> (Vec<i16>, usize) {
     m[1] = -500;
     m[2 * n + 3] = 42;
     m[5 * n + 5] = i16::MIN;
-    m[5 * n + 0] = i16::MAX;
+    m[5 * n] = i16::MAX;
     (m, n)
 }
 
@@ -59,6 +59,7 @@ fn sample_dict() -> BinDict {
         keys: &keys,
         matrix: &matrix,
         num_pos,
+        boundary: &[],
     })
     .unwrap();
     let dict = BinDict::from_vec(bytes).unwrap();
@@ -195,6 +196,7 @@ fn test_empty_dict() {
         keys: &keys,
         matrix: &[0],
         num_pos: 1,
+        boundary: &[],
     })
     .unwrap();
     let dict = BinDict::from_vec(bytes).unwrap();
@@ -212,6 +214,7 @@ fn test_build_rejects_empty_surface() {
             keys: &keys,
             matrix: &[0],
             num_pos: 1,
+            boundary: &[],
         })
         .is_err()
     );
@@ -225,6 +228,7 @@ fn test_build_rejects_bad_matrix() {
             keys: &keys,
             matrix: &[0; 3],
             num_pos: 2,
+            boundary: &[],
         })
         .is_err()
     );
@@ -233,6 +237,7 @@ fn test_build_rejects_bad_matrix() {
             keys: &keys,
             matrix: &[],
             num_pos: 0,
+            boundary: &[],
         })
         .is_err()
     );
@@ -246,6 +251,7 @@ fn test_open_rejects_corruption() {
         keys: &keys,
         matrix: &matrix,
         num_pos,
+        boundary: &[],
     })
     .unwrap();
 
@@ -285,6 +291,7 @@ fn test_verify_detects_bad_references() {
         keys: &keys,
         matrix: &matrix,
         num_pos,
+        boundary: &[],
     })
     .unwrap();
     let dict = BinDict::from_vec(bytes.clone()).unwrap();
@@ -316,6 +323,7 @@ fn test_file_roundtrip_via_mmap() {
         keys: &keys,
         matrix: &matrix,
         num_pos,
+        boundary: &[],
     })
     .unwrap();
     let path = std::env::temp_dir().join("jamo_bindict_mmap_test.dict");
@@ -330,4 +338,60 @@ fn test_file_roundtrip_via_mmap() {
     let dict = BinDict::read(&path).unwrap();
     assert_eq!(dict.vocab_size(), 12);
     let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn test_boundary_penalty_changes_single_word_result() {
+    // 「いく」: 非自立動詞 (id 3、BOS→3 = 0、3→EOS = 300) のコスト 0 が自立動詞
+    // 「行く」(id 0、接続 0、コスト 500) に勝つ状況を PREFIX ペナルティで逆転させる
+    // (mozc の boundary.def と同じ仕組み)
+    let keys = vec![(
+        "いく".to_string(),
+        vec![
+            e("いく", 3, 3, 0, POS_FUNCTION),
+            e("行く", 0, 0, 500, POS_CONTENT),
+        ],
+    )];
+    let (matrix, num_pos) = sample_matrix();
+    let mut boundary = vec![(0u16, 0u16); num_pos];
+    boundary[3] = (4000, 300);
+    let bytes = build(BuildInput {
+        keys: &keys,
+        matrix: &matrix,
+        num_pos,
+        boundary: &boundary,
+    })
+    .unwrap();
+    let dict = BinDict::from_vec(bytes).unwrap();
+    dict.verify().unwrap();
+    assert_eq!(dict.prefix_penalty(3), 4000);
+    assert_eq!(dict.suffix_penalty(3), 300);
+    assert_eq!(dict.prefix_penalty(0), 0);
+    assert_eq!(dict.prefix_penalty(99), 0);
+    let result = crate::convert_with_conn("いく", &dict, &dict);
+    assert_eq!(result.segments[0].surface, "行く");
+
+    // 表なし (空) なら 0 で、コスト順どおり「いく」
+    let bytes = build(BuildInput {
+        keys: &keys,
+        matrix: &matrix,
+        num_pos,
+        boundary: &[],
+    })
+    .unwrap();
+    let dict = BinDict::from_vec(bytes).unwrap();
+    assert_eq!(dict.prefix_penalty(3), 0);
+    let result = crate::convert_with_conn("いく", &dict, &dict);
+    assert_eq!(result.segments[0].surface, "いく");
+
+    // サイズ不一致はビルドエラー、壊れたセクション長はオープンエラー
+    assert!(
+        build(BuildInput {
+            keys: &keys,
+            matrix: &matrix,
+            num_pos,
+            boundary: &boundary[..2],
+        })
+        .is_err()
+    );
 }

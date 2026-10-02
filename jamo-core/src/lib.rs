@@ -8,6 +8,7 @@ pub mod capi;
 
 pub mod bindict;
 pub mod bitvec;
+pub mod boundary;
 pub mod dict;
 pub mod ipadic;
 pub mod kana;

@@ -145,6 +145,17 @@ impl Lattice {
             ends_at[byte_end].push(idx);
         }
 
+        // 文節境界ペナルティ: 先頭で始まるノードに PREFIX、末尾で終わるノードに SUFFIX
+        // (mozc の boundary.def。「いく」単独で非自立動詞が勝つ等を抑える)
+        for node in nodes.iter_mut().skip(1) {
+            if node.start == 0 {
+                node.word_cost += dict.prefix_penalty(node.left_id) as i64;
+            }
+            if node.end == input_len {
+                node.word_cost += dict.suffix_penalty(node.right_id) as i64;
+            }
+        }
+
         // EOS (文末) ノード: 入力末尾で開始・終了する特殊ノード
         let eos_idx = nodes.len();
         nodes.push(Node {

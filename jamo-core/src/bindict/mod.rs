@@ -285,6 +285,17 @@ impl BinDict {
         read_i16(data, m.defaults.start + r * 2)
     }
 
+    /// 境界ペナルティ表の (prefix, suffix)。表がない / 範囲外なら (0, 0)
+    #[inline]
+    fn boundary(&self, id: u16) -> (i32, i32) {
+        let sec = self.section(SEC_BOUNDARY);
+        let off = id as usize * BOUNDARY_LEN;
+        if off + BOUNDARY_LEN > sec.len() {
+            return (0, 0);
+        }
+        (read_u16(sec, off) as i32, read_u16(sec, off + 2) as i32)
+    }
+
     pub fn vocab_size(&self) -> usize {
         self.layout.vocab_size
     }
@@ -386,6 +397,14 @@ impl std::fmt::Debug for BinDict {
 }
 
 impl Dictionary for BinDict {
+    fn prefix_penalty(&self, left_id: u16) -> i32 {
+        self.boundary(left_id).0
+    }
+
+    fn suffix_penalty(&self, right_id: u16) -> i32 {
+        self.boundary(right_id).1
+    }
+
     fn common_prefix_search(&self, input: &str) -> Vec<(usize, Vec<Entry>)> {
         let louds = self.bits(&self.layout.louds);
         let labels = self.section(SEC_LABELS);
