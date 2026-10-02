@@ -552,3 +552,15 @@
 - よかったこと: callgrind で `ConnectionCost::cost` が 38% と出て対処が一意に決まった。v3 の圧縮行列は 1 参照 4.7ns と v2 の密行列 (1.7ns) より遅いが、参照回数を減らすことで差し引き v2 より速くなった
 - 判断: 密行列をメモリに展開する案 (14 MB) はゴールに反するので却下。集約は Viterbi の最適性を変えない (同じ right_id の前ノードは次ノードから区別できない) ため精度テストは不変。同コストのタイブレークは変わりうるが候補順への影響はない
 - 残課題: 候補生成 (decode_nbest 後半) と文字列アロケーションが残りの主要コスト。prefix_search の select 回数削減
+
+### T180 本家 mozc との比較ベンチ (scripts/bench-engines.py) ✓ (2026-10-02)
+- やったこと:
+    - `jamo bench <corpus.tsv>` サブコマンド (jamo-cli/src/bench.rs): コーパス一括変換で Top-1 / Top-5 (候補選択で到達可能) / レイテンシ (1 回ウォームアップ後 repeat 回の平均、p50/p95) / VmHWM を TSV + `#summary` JSON で出す
+    - 精度コーパスを jamo-core/tests/corpus.tsv に出し、accuracy_test.rs は include_str! で読む (bench と共用)
+    - scripts/bench-engines.py: mozc_server を起動し本家クライアントと同じ IPC で駆動する。abstract unix socket `\0tmp/.mozc.<key>.session` (key は ~/.config/mozc/.session.ipc の protobuf) に commands.Input を生で送って half-close し commands.Output を受ける。かなは KeyEvent.key_string + AS_IS、Space で変換、preedit.segment が Top-1、all_candidate_words (Right で文節移動) の上位 5 件が Top-5、REVERT で学習させない。protobuf は必要フィールドだけ手で符号化・復号 (group 型含む) し依存なし。root では mozc_server が abort するので `--user` で一般ユーザーとして自分を再実行、`--drop-caches` で cold start 計測。結果は markdown 表 + 両者の差分一覧 + JSON
+    - scripts/bench-memory.py にも `--drop-caches` を追加
+    - 結果 (doc/bench.md): レイテンシ 57 us vs 1246 us、起動 2.4 ms vs 117 ms、バイナリ 19.3 MB vs 22.7 MB、peak RSS 8.5 MB vs 25.2 MB。精度は初回 50/56 vs 54/56 で負け (→ T181 で同点)
+- 変更したファイル: jamo-cli/src/bench.rs (新規), jamo-cli/src/main.rs, jamo-core/tests/corpus.tsv (新規), jamo-core/tests/accuracy_test.rs, scripts/bench-engines.py (新規), scripts/bench-memory.py, doc/bench.md (新規), doc/memory.md, doc/current.md, doc/tasks.md, README.md, doc/done.md
+- よかったこと: mozc_server が root で黙って abort する原因 (geteuid()==0 → tgkill SIGABRT) と、IPC が Command ではなく Input を生で送る形式であることを strace と本家ソース (unix_ipc.cc, session_server.cc) から特定でき、GUI なしで本家を駆動できた。large folio による RSS の水増しは drop_caches で 4KB ページ単位の実測に戻せた (1 バイト触れて 2048 kB → 4 kB)
+- 判断: 本家のレイテンシは IPC 往復込みで比較する (fcitx5-mozc も同じ経路で話すので実使用の値)。往復分 ~0.6 ms を差し引いても 10 倍以上差がある。protobuf ライブラリや grpcio-tools を requirements にしない (手符号化で十分)。zstd 展開は tar --zstd → zstd CLI の順で試す
+- 残課題: 56 文では統計的な差は言えない。大きいコーパスでの比較。本家の予測変換 (サジェスト) は比較対象外

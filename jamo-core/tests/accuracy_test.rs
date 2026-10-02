@@ -21,307 +21,47 @@ enum Category {
     Katakana,
 }
 
-/// テストケース
+/// テストケース (tests/corpus.tsv の 1 行)
 struct TestCase {
     input: &'static str,
     expected: &'static str,
     category: Category,
 }
 
+/// 精度評価コーパス。scripts/bench-engines.py (mozc との比較) と同じファイルを読む
+const CORPUS_TSV: &str = include_str!("corpus.tsv");
+
+fn parse_category(name: &str) -> Category {
+    match name {
+        "NounPhrase" => Category::NounPhrase,
+        "Adjective" => Category::Adjective,
+        "VerbConjugation" => Category::VerbConjugation,
+        "Polite" => Category::Polite,
+        "Daily" => Category::Daily,
+        "Place" => Category::Place,
+        "Time" => Category::Time,
+        "Complex" => Category::Complex,
+        "ShortVerb" => Category::ShortVerb,
+        "ShortNoun" => Category::ShortNoun,
+        "Katakana" => Category::Katakana,
+        other => panic!("unknown category in corpus.tsv: {other}"),
+    }
+}
+
 fn test_corpus() -> Vec<TestCase> {
-    vec![
-        // 基本的な名詞+助詞
-        TestCase {
-            input: "わたしはがくせいです",
-            expected: "私は学生です",
-            category: Category::NounPhrase,
-        },
-        TestCase {
-            input: "にほんごをべんきょうする",
-            expected: "日本語を勉強する",
-            category: Category::NounPhrase,
-        },
-        TestCase {
-            input: "とうきょうにいきたい",
-            expected: "東京に行きたい",
-            category: Category::NounPhrase,
-        },
-        TestCase {
-            input: "ほんをよむ",
-            expected: "本を読む",
-            category: Category::NounPhrase,
-        },
-        TestCase {
-            input: "みずをのむ",
-            expected: "水を飲む",
-            category: Category::NounPhrase,
-        },
-        // 形容詞
-        TestCase {
-            input: "たかいやま",
-            expected: "高い山",
-            category: Category::Adjective,
-        },
-        TestCase {
-            input: "おおきいいえ",
-            expected: "大きい家",
-            category: Category::Adjective,
-        },
-        TestCase {
-            input: "あたらしいほん",
-            expected: "新しい本",
-            category: Category::Adjective,
-        },
-        // 動詞活用
-        TestCase {
-            input: "あるいていく",
-            expected: "歩いていく",
-            category: Category::VerbConjugation,
-        },
-        TestCase {
-            input: "たべている",
-            expected: "食べている",
-            category: Category::VerbConjugation,
-        },
-        TestCase {
-            input: "はしっている",
-            expected: "走っている",
-            category: Category::VerbConjugation,
-        },
-        // 丁寧語
-        TestCase {
-            input: "おはようございます",
-            expected: "おはようございます",
-            category: Category::Polite,
-        },
-        TestCase {
-            input: "ありがとうございます",
-            expected: "ありがとうございます",
-            category: Category::Polite,
-        },
-        // 日常表現
-        TestCase {
-            input: "なまえはたなかです",
-            expected: "名前は田中です",
-            category: Category::Daily,
-        },
-        TestCase {
-            input: "がっこうにいく",
-            expected: "学校に行く",
-            category: Category::Daily,
-        },
-        TestCase {
-            input: "しごとをする",
-            expected: "仕事をする",
-            category: Category::Daily,
-        },
-        TestCase {
-            input: "でんわをかける",
-            expected: "電話をかける",
-            category: Category::Daily,
-        },
-        TestCase {
-            input: "てがみをかく",
-            expected: "手紙を書く",
-            category: Category::Daily,
-        },
-        // 場所
-        TestCase {
-            input: "おおさかにすんでいます",
-            expected: "大阪に住んでいます",
-            category: Category::Place,
-        },
-        TestCase {
-            input: "えきまであるく",
-            expected: "駅まで歩く",
-            category: Category::Place,
-        },
-        // 時間
-        TestCase {
-            input: "あしたはやすみです",
-            expected: "明日は休みです",
-            category: Category::Time,
-        },
-        TestCase {
-            input: "まいにちべんきょうする",
-            expected: "毎日勉強する",
-            category: Category::Time,
-        },
-        // やや複雑な文
-        TestCase {
-            input: "にほんのしゅとはとうきょうです",
-            expected: "日本の首都は東京です",
-            category: Category::Complex,
-        },
-        TestCase {
-            input: "ともだちとえいがをみる",
-            expected: "友達と映画を見る",
-            category: Category::Complex,
-        },
-        TestCase {
-            input: "かぞくでりょこうにいく",
-            expected: "家族で旅行に行く",
-            category: Category::Complex,
-        },
-        TestCase {
-            input: "さんにんのがくせい",
-            expected: "三人の学生",
-            category: Category::Complex,
-        },
-        TestCase {
-            input: "あめがふっているからかさをもつ",
-            expected: "雨が降っているから傘を持つ",
-            category: Category::Complex,
-        },
-        TestCase {
-            input: "さむいのであたたかいものをたべる",
-            expected: "寒いので暖かいものを食べる",
-            category: Category::Complex,
-        },
-        // 短い動詞
-        TestCase {
-            input: "いく",
-            expected: "行く",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "みる",
-            expected: "見る",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "する",
-            expected: "する",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "くる",
-            expected: "来る",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "ある",
-            expected: "ある",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "いる",
-            expected: "いる",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "たべる",
-            expected: "食べる",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "のむ",
-            expected: "飲む",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "よむ",
-            expected: "読む",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "かく",
-            expected: "書く",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "はなす",
-            expected: "話す",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "きく",
-            expected: "聞く",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "おもう",
-            expected: "思う",
-            category: Category::ShortVerb,
-        },
-        TestCase {
-            input: "しる",
-            expected: "知る",
-            category: Category::ShortVerb,
-        },
-        // 短い名詞
-        TestCase {
-            input: "やま",
-            expected: "山",
-            category: Category::ShortNoun,
-        },
-        TestCase {
-            input: "かわ",
-            expected: "川",
-            category: Category::ShortNoun,
-        },
-        TestCase {
-            input: "そら",
-            expected: "空",
-            category: Category::ShortNoun,
-        },
-        TestCase {
-            input: "うみ",
-            expected: "海",
-            category: Category::ShortNoun,
-        },
-        TestCase {
-            input: "はな",
-            expected: "花",
-            category: Category::ShortNoun,
-        },
-        TestCase {
-            input: "ひと",
-            expected: "人",
-            category: Category::ShortNoun,
-        },
-        TestCase {
-            input: "くるま",
-            expected: "車",
-            category: Category::ShortNoun,
-        },
-        TestCase {
-            input: "でんしゃ",
-            expected: "電車",
-            category: Category::ShortNoun,
-        },
-        TestCase {
-            input: "ひこうき",
-            expected: "飛行機",
-            category: Category::ShortNoun,
-        },
-        TestCase {
-            input: "びょういん",
-            expected: "病院",
-            category: Category::ShortNoun,
-        },
-        // カタカナ語 (正当なカタカナ表層が壊れないことのガード)
-        TestCase {
-            input: "こーひーをのむ",
-            expected: "コーヒーを飲む",
-            category: Category::Katakana,
-        },
-        TestCase {
-            input: "てれびをみる",
-            expected: "テレビを見る",
-            category: Category::Katakana,
-        },
-        TestCase {
-            input: "かめらをかう",
-            expected: "カメラを買う",
-            category: Category::Katakana,
-        },
-        TestCase {
-            input: "にゅーすをみる",
-            expected: "ニュースを見る",
-            category: Category::Katakana,
-        },
-    ]
+    CORPUS_TSV
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            assert_eq!(f.len(), 3, "corpus.tsv: 3 columns expected: {l}");
+            TestCase {
+                input: f[1],
+                expected: f[2],
+                category: parse_category(f[0]),
+            }
+        })
+        .collect()
 }
 
 fn load_ipadic() -> Option<BinDict> {

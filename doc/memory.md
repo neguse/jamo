@@ -16,29 +16,33 @@ RSS (~10MB) を引き継ぎ、それが下限になって小さい値が測れ�
 
 | エンジン | 辞書データ | peak RSS | 計測条件 |
 |---------|-----------|----------|---------|
-| jamo + mozc.dict (v3) | 19.3 MB (.dict) | **17.9 MB** | 変換1回込み (mmap、ext4 ページキャッシュ) |
-| jamo + mozc.dict (v3) | 19.3 MB (.dict) | **9.5 MB** | 変換1回込み (mmap、tmpfs 4KB ページ) |
-| jamo + ipadic.dict (v3) | 8.4 MB (.dict) | **11.2 MB** | 変換1回込み (mmap、ext4) |
-| jamo + ipadic.dict (v3) | 8.4 MB (.dict) | **7.0 MB** | 変換1回込み (mmap、tmpfs) |
+| jamo + mozc.dict (v3) | 19.3 MB (.dict) | **4.7 MB** | 変換1回込み (mmap、cold start: `--drop-caches`) |
+| jamo + mozc.dict (v3) | 19.3 MB (.dict) | **8.5 MB** | 56 文 × 21 回変換後 (scripts/bench-engines.py、cold start) |
+| jamo + mozc.dict (v3) | 19.3 MB (.dict) | 17.9 MB | 変換1回込み (mmap、warm: ext4 ページキャッシュに large folio で載った状態) |
+| jamo + mozc.dict (v3) | 19.3 MB (.dict) | 9.5 MB | 変換1回込み (mmap、tmpfs 4KB ページ) |
+| jamo + ipadic.dict (v3) | 8.4 MB (.dict) | **4.0 MB** | 変換1回込み (mmap、cold start) |
+| mozc_server (本家 3.34.6239) | 22.7 MB (バイナリ埋め込み) | **25.2 MB** | 56 文 × 21 回変換後 (bench-engines.py、同じ cold start 条件) |
+| mozc_server (本家 3.34.6239) | 22.7 MB | 17.3 MB | 起動直後・変換なし (2026-10-02 実測) |
 | jamo + mozc.dict (v2、参考) | 83.5 MB (.dict) | 152.6 MB | 変換1回込み (全ヒープ展開) |
 | jamo + ipadic.dict (v2、参考) | 20.1 MB (.dict) | 42.9 MB | 変換1回込み |
 | Anthy (anthy-unicode 1.0.0.20260213) | 20.3 MB (anthy.dic) | 16.8 MB | 付属テスト約550件の変換込み (2026-08-19) |
 | mozc_server (本家 fcitx5-mozc) | 22.7 MB (バイナリ埋め込み) | 6.2 MB | 起動直後・変換なし (下限値、2026-08-19) |
 
 - jamo-cli 自体のベースライン (辞書を開かない usage 表示) は 3.3 MB。
-- **ext4 と tmpfs で差が出る理由**: Linux 6.x のページキャッシュは large folio で、
-  mmap した辞書に 1 バイト触れるだけで 2MB 単位がマップされる (`/proc/self/smaps` で
-  確認: 1 バイト → Rss 2048 kB)。ファイル全体 19.3 MB のうちほぼ全域に 1 回は触れる
-  ため、ext4 では辞書サイズ近くまで RSS が伸びる。tmpfs は 4KB ページ (fault-around
-  64KB 単位) なので、実際に触れたページに近い値になる。組み込み (DM250 の SD など
-  4KB ページ環境) のワーキングセットは tmpfs の値が目安。
-- mozc_server はクライアントなしでは変換を実行できないため起動直後の値。この計測環境
-  (コンテナ) ではデーモンが即終了して観測できないので 2026-08-19 の実測値を再掲。
-  辞書をバイナリに埋め込み mmap + lazy load するため、変換後は 22.7 MB + 作業領域が
-  上限の目安。
+- **warm と cold で差が出る理由**: Linux 6.x のページキャッシュは large folio で、
+  キャッシュ済みのファイルを mmap すると 1 バイト触れるだけで 2MB 単位がマップされる
+  (`/proc/self/smaps` で確認: 1 バイト → Rss 2048 kB)。辞書 19.3 MB のほぼ全域に薄く
+  触れるため warm では辞書サイズ近くまで RSS が伸びる。`--drop-caches` で捨ててから
+  測ると 4KB ページ単位でフォルトし、実際に触れたページだけになる (1 バイト → 4 kB)。
+  tmpfs (4KB ページ、fault-around 64KB) も近い値。組み込み (DM250 の SD など) の
+  ワーキングセットは cold の値が目安。
+- mozc_server は root では起動を拒否する (geteuid()==0 で abort)。一般ユーザーで起動し、
+  本家の IPC で変換を流して測った (doc/bench.md)。本家は辞書をバイナリに埋め込み
+  mmap + lazy load するが、変換を流すと 25 MB に達する。
 - 同じ mozc dictionary_oss ソースを、本家は 22.7 MB のバイナリ (辞書 + 接続行列の
   データ部は 16.87 MB)、jamo v3 は 19.3 MB の .dict に収める。バイナリ対バイナリでは
   jamo が小さく、データ対データでは 2.4 MB 及ばない (T151 の bit 符号化で追う)。
+- 変換時の RSS は jamo 8.5 MB vs 本家 25.2 MB (同じ 56 文、cold start)。
 
 ## 辞書バイナリ内訳 (フォーマット v3)
 

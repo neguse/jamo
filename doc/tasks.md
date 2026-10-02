@@ -405,6 +405,28 @@ GTK アプリ・Chromium・ターミナルで ローマ字 → 変換 → 候補
 
 ---
 
+## Iter 12: 本家 mozc との比較 — 完了 (2026-10-02)
+
+完了条件: 同一コーパスで本家 mozc_server と精度・レイテンシ・メモリを比較でき、
+jamo が省メモリ・高速で精度同等以上であること。結果は doc/bench.md。
+
+### 設計決定
+
+- 本家は mozc_server を本物の IPC で駆動する (abstract unix socket に commands.Input を
+  生で送り half-close、commands.Output を受ける)。protobuf は必要フィールドだけ手で
+  符号化・復号し、依存ライブラリを増やさない。mozc_server は root を拒否するので
+  一般ユーザーで再実行する
+- 精度の差 (単文節 4 件) は本家の boundary.def (文節境界ペナルティ) の移植で埋める。
+  辞書コスト・接続行列の改変や、コーパスに合わせた個別調整はしない
+- コーパスは jamo-core/tests/corpus.tsv に出し、accuracy_test.rs と bench で共用する
+
+| # | タスク | 成果物 |
+|---|--------|--------|
+| T180 ✓ | 比較ベンチ | scripts/bench-engines.py (jamo `bench` サブコマンド + mozc IPC クライアント)、doc/bench.md |
+| T181 ✓ | 文節境界ペナルティ | jamo-core/src/boundary.rs (boundary.def の規則マッチ)、v3 boundary セクション、lattice 先頭/末尾ノードへの加算。Top-1 50/56 → 54/56 |
+
+---
+
 ## Iter 9: 省メモリ辞書 (ゼロコピー v3) — T141-T149 完了 (2026-10-01)
 
 状態: ゴール「mozc より省メモリ・高速で、変換精度は同等以上」(2026-10-01) を受けて

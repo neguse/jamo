@@ -478,7 +478,7 @@ mod tests {
         (0..n)
             .map(|_| {
                 state = state.wrapping_mul(1103515245).wrapping_add(12345);
-                (state >> 16) % modulo == 0
+                ((state >> 16) % modulo) == 0
             })
             .collect()
     }

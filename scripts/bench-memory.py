@@ -237,10 +237,16 @@ def main():
     parser.add_argument("--with-mozc-server", action="store_true")
     parser.add_argument("--shm", nargs="?", const="/dev/shm", default=None,
                         help="辞書を tmpfs (既定 /dev/shm) にコピーして 4KB ページで計測")
+    parser.add_argument("--drop-caches", action="store_true",
+                        help="計測前にページキャッシュを捨てる (root)。cold start の条件で 4KB ページ単位の RSS を測る")
     parser.add_argument("--work", default=os.path.join(REPO, "target", "bench-memory"))
     args = parser.parse_args()
 
     os.makedirs(args.work, exist_ok=True)
+    if args.drop_caches:
+        os.sync()
+        with open("/proc/sys/vm/drop_caches", "w") as f:
+            f.write("3\n")
     results = []
     bench_jamo(results, args.work, args.shm)
     if args.with_anthy:

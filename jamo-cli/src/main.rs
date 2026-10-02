@@ -6,6 +6,7 @@ use std::time::Instant;
 use jamo_core::bindict::BinDict;
 use jamo_core::ipadic::IpaDict;
 
+mod bench;
 mod ime_server;
 mod serve;
 
@@ -21,6 +22,7 @@ fn main() {
         "convert" => cmd_convert(&args[2..]),
         "serve" => cmd_serve(&args[2..]),
         "dict" => cmd_dict(&args[2..]),
+        "bench" => cmd_bench(&args[2..]),
         _ => {
             eprintln!("Unknown command: {}", args[1]);
             print_usage();
@@ -40,6 +42,7 @@ fn print_usage() {
     );
     eprintln!("  dict merge --base <dir> --extra <path>... -o <output>  辞書マージ");
     eprintln!("  dict info <dict>               辞書バイナリのセクション別内訳");
+    eprintln!("  bench [--dict DIR] [--repeat N] <corpus.tsv>  精度・レイテンシ・メモリ計測");
 }
 
 /// 引数から --dict DIR を抽出。残りの引数も返す。
@@ -143,6 +146,39 @@ fn cmd_convert(args: &[String]) {
 
     let text: String = result.segments.iter().map(|s| s.surface.as_str()).collect();
     println!("{text}");
+}
+
+fn cmd_bench(args: &[String]) {
+    let (dict_path, rest) = parse_dict_arg(args);
+    let mut repeat = 20;
+    let mut corpus = None;
+    let mut i = 0;
+    while i < rest.len() {
+        if rest[i] == "--repeat" && i + 1 < rest.len() {
+            repeat = rest[i + 1].parse().unwrap_or(20);
+            i += 2;
+        } else {
+            corpus = Some(rest[i].clone());
+            i += 1;
+        }
+    }
+    let Some(corpus) = corpus else {
+        eprintln!("Usage: jamo bench [--dict DIR] [--repeat N] <corpus.tsv>");
+        std::process::exit(1);
+    };
+
+    let start = Instant::now();
+    let dict = load_dict(dict_path.as_deref());
+    let load_us = start.elapsed().as_secs_f64() * 1e6;
+    let dict_bytes = dict.len() as u64;
+    let args = bench::BenchArgs {
+        corpus: Path::new(&corpus),
+        repeat,
+    };
+    if let Err(e) = bench::run(&dict, dict_bytes, load_us, &args) {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
 }
 
 fn cmd_serve(args: &[String]) {

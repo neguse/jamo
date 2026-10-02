@@ -18,19 +18,24 @@
 | 9 | ほぼ完了 | 省メモリ辞書 (ゼロコピー v3): T140-T149 完了。.dict 83.5→19.3MB、peak RSS 152.6→17.9MB (ext4) / 9.5MB (tmpfs)。残: T150 cgroup 検証、T151 bit 符号化 |
 | 10 | 完了 | 入力体験 (キー一打の手触り): T160-T165 完了。lite-dm2x の host ハーネス (`just test-ime`) と DM250 実機 (2026-08-25、keyin 注入 + screenshot) で検証済み |
 | 11 | 完了 | Linux IME (fcitx5): T170 アドオン + E2E (CI は Arch コンテナ)、T171 Omarchy 実機導入 |
+| 12 | 完了 | 本家 mozc との比較: T180 bench-engines.py (IPC で mozc_server を駆動)、T181 文節境界ペナルティ (boundary.def) |
 
 ## ゴール (2026-10-01): mozc より省メモリ・高速で、精度は同等以上
 
-| 軸 | jamo v3 (mozc 辞書) | 本家 mozc_server | 状態 |
-|----|--------------------|-----------------|------|
-| 辞書バイナリ | 19.3 MB (.dict) | 22.7 MB (バイナリ埋め込み、データ部 16.87 MB) | バイナリ対バイナリで下回る。データ対データは 2.4 MB 及ばない (T151) |
-| peak RSS (変換 1 回) | 17.9 MB (ext4) / 9.5 MB (tmpfs 4KB ページ) | 6.2 MB (起動直後・変換なしの下限値) | 変換込みの本家の値は未計測 (コンテナでは mozc_server が起動しない) |
-| 変換レイテンシ | 13-131 us (IPAdic, criterion)、mozc 辞書で中文 ~130 us | 未計測 (IPC 込みで ms 級との通説) | 同条件比較は未実施 |
-| 精度 (56 文) | Top-1 89.3% / Top-5 98.2% | 同じ辞書・行列を使うので文節変換は同等、本家は rewriter (日付・数字・学習) で上積み | 本家の実測値は未取得 |
+同一コーパス (56 文) で本家 mozc_server と直接比較した (scripts/bench-engines.py、doc/bench.md、2026-10-02、cold start):
 
-次のアクション: (1) 本家が動く環境 (Omarchy 実機) で mozc_server の変換込み RSS と
-レイテンシ、同一コーパスの精度を取る、(2) T151 の bit 符号化でデータ部 16.87 MB を下回る、
-(3) T150 の cgroup 検証。
+| 軸 | jamo v3 (mozc 辞書) | 本家 mozc_server 3.34 | 状態 |
+|----|--------------------|-----------------|------|
+| 辞書バイナリ | **19.3 MB** (.dict) | 22.7 MB (バイナリ埋め込み、データ部 16.87 MB) | 勝ち (バイナリ対バイナリ)。データ対データは 2.4 MB 及ばない (T151) |
+| peak RSS (56 文 × 21 回変換後) | **8.5 MB** | 25.2 MB (起動直後 17.3 MB) | 勝ち |
+| 変換レイテンシ 平均 / p50 / p95 | **57 / 33 / 128 us** | 1246 / 930 / 2561 us (IPC 往復込み) | 勝ち (往復 ~0.6 ms を差し引いても 10 倍以上) |
+| 起動 | **2.4 ms** | 116.6 ms | 勝ち |
+| 精度 Top-1 / Top-5 | 54/56 / 55/56 | 54/56 / 55/56 | 同点。初回は 50/56 で単文節 4 件負けていたが、本家の boundary.def (文節境界ペナルティ) を移植して同点 |
+
+残る 2 文 (からかさ→傘、あたたかい→温かい) は本家も同じ外し方。
+
+次のアクション: (1) T151 の bit 符号化でデータ部 16.87 MB を下回る、(2) T150 の cgroup
+検証、(3) もっと大きいコーパス (本家との差が統計的に出る規模) での精度比較。
 
 ## Iter 11: Linux IME (fcitx5)
 
@@ -97,7 +102,7 @@ criterion (IPAdic、`cargo bench -p jamo-core`)。v3 の変換が速いのは Vi
 
 | 指標 | 値 |
 |------|-----|
-| Top-1 | **89.3%** |
+| Top-1 | **96.4%** (54/56、本家 mozc_server と同点) |
 | Top-5 (候補選択で到達可能) | **98.2%** |
 
 `scripts/fetch-mozc.sh && jamo dict build --dict data/mozc -o data/mozc.dict` で構築。
@@ -151,7 +156,7 @@ jamo-core/cbindgen.toml -o jamo-core/include/jamo.h jamo-core`)。lite-dm2x 側
 
 ## テスト
 
-全236テスト通過 (2026-10-01 実測、cargo test。IPAdic / mozc データあり)
+全241テスト通過 (2026-10-02 実測、cargo test。IPAdic / mozc データあり)
 
 ## プロジェクト構成
 
