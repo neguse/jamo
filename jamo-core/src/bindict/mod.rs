@@ -72,6 +72,8 @@ impl BinDict {
         // 変換結果が壊れるだけ)。
         let map = unsafe { memmap2::Mmap::map(&file)? };
         // 辞書引きはランダムアクセスなので先読みを抑え、触れたページだけを載せる
+        // (madvise は unix のみ。Windows は既定のまま)
+        #[cfg(unix)]
         let _ = map.advise(memmap2::Advice::Random);
         Self::new(Storage::Mapped(map))
     }
