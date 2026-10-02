@@ -4,12 +4,12 @@
 /// プロトコル: NDJSON (1行1メッセージ)
 use std::sync::Arc;
 
-use jamo_core::ipadic::IpaDict;
+use jamo_core::bindict::BinDict;
 use jamo_core::ipc::{IpcRequest, IpcResponse, PredictEntry};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 /// IPC リクエストを処理して IPC レスポンスを返す
-fn process_request(request: &IpcRequest, dict: &IpaDict) -> IpcResponse {
+fn process_request(request: &IpcRequest, dict: &BinDict) -> IpcResponse {
     match request {
         IpcRequest::Convert { hiragana, n } => {
             let result = jamo_core::convert_nbest(hiragana, dict, dict, *n);
@@ -50,7 +50,7 @@ fn process_request(request: &IpcRequest, dict: &IpaDict) -> IpcResponse {
 }
 
 /// 1接続を処理するループ
-async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin>(stream: S, dict: Arc<IpaDict>) {
+async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin>(stream: S, dict: Arc<BinDict>) {
     let (reader, mut writer) = tokio::io::split(stream);
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
@@ -95,7 +95,7 @@ async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin>(stream: S, dict: A
 
 /// IME IPC サーバーを起動
 #[cfg(unix)]
-pub async fn run(dict: Arc<IpaDict>) {
+pub async fn run(dict: Arc<BinDict>) {
     let path = jamo_core::ipc::SOCKET_PATH;
     // 前回のソケットファイルを削除
     let _ = std::fs::remove_file(path);
@@ -117,7 +117,7 @@ pub async fn run(dict: Arc<IpaDict>) {
 }
 
 #[cfg(windows)]
-pub async fn run(dict: Arc<IpaDict>) {
+pub async fn run(dict: Arc<BinDict>) {
     use tokio::net::windows::named_pipe::ServerOptions;
 
     let pipe_name = jamo_core::ipc::PIPE_NAME;
@@ -155,8 +155,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_ime_server_convert() {
-        let dict =
-            IpaDict::load(std::path::Path::new("../data/ipadic")).expect("need ipadic for test");
+        let dict = jamo_core::ipadic::IpaDict::load(std::path::Path::new("../data/ipadic"))
+            .expect("need ipadic for test")
+            .into_bindict()
+            .expect("failed to build");
         let dict = Arc::new(dict);
 
         let socket_path = "/tmp/jamo-ime-test.sock";
@@ -209,8 +211,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_ime_server_predict() {
-        let dict =
-            IpaDict::load(std::path::Path::new("../data/ipadic")).expect("need ipadic for test");
+        let dict = jamo_core::ipadic::IpaDict::load(std::path::Path::new("../data/ipadic"))
+            .expect("need ipadic for test")
+            .into_bindict()
+            .expect("failed to build");
         let dict = Arc::new(dict);
 
         let socket_path = "/tmp/jamo-ime-test-predict.sock";

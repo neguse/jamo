@@ -7,7 +7,7 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::get,
 };
-use jamo_core::ipadic::IpaDict;
+use jamo_core::bindict::BinDict;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -34,7 +34,7 @@ struct ClauseResponse {
 }
 
 async fn handle_convert(
-    State(dict): State<Arc<IpaDict>>,
+    State(dict): State<Arc<BinDict>>,
     Query(params): Query<ConvertParams>,
 ) -> impl IntoResponse {
     let result = jamo_core::convert_nbest(&params.q, dict.as_ref(), dict.as_ref(), params.n);
@@ -69,7 +69,7 @@ struct ResizeParams {
 }
 
 async fn handle_resize(
-    State(dict): State<Arc<IpaDict>>,
+    State(dict): State<Arc<BinDict>>,
     Query(params): Query<ResizeParams>,
 ) -> Response {
     let boundaries = match parse_boundaries_param(&params.boundaries) {
@@ -151,7 +151,7 @@ struct PredictCandidate {
 }
 
 async fn handle_predict(
-    State(dict): State<Arc<IpaDict>>,
+    State(dict): State<Arc<BinDict>>,
     Query(params): Query<PredictParams>,
 ) -> impl IntoResponse {
     let candidates = dict
@@ -201,7 +201,7 @@ async fn handle_health() -> impl IntoResponse {
     (StatusCode::OK, "ok")
 }
 
-pub async fn run(port: u16, dict: Arc<IpaDict>) {
+pub async fn run(port: u16, dict: Arc<BinDict>) {
     let app = Router::new()
         .route(
             "/convert",

@@ -8,17 +8,29 @@
 //! - `dictionary*.txt` : 読み\t左文脈ID\t右文脈ID\tコスト\t表層形
 //! - `id.def`          : ID と品詞素性 (IPAdic 互換のカンマ区切り)
 //! - `connection_single_column.txt` : 1行目が品詞数、以降 [right][left] 順の接続コスト
+//! - `boundary.def` (任意)       : 文節境界ペナルティ規則 (src/data/rules/。scripts/fetch-mozc.sh が取得)
 
 use std::fs;
 use std::path::Path;
 
+use crate::boundary::BoundaryRules;
 use crate::dict::POS_CONTENT;
 use crate::ipadic::{IpaDict, RawEntry, build_from_entries, classify_pos};
 
 /// mozc dictionary_oss ディレクトリから辞書をロードする
 pub fn load_mozc(dir: &Path) -> Result<IpaDict, String> {
-    let pos_type = parse_id_def(&read(dir, "id.def")?)?;
+    let id_def = read(dir, "id.def")?;
+    let pos_type = parse_id_def(&id_def)?;
     let (num_pos, matrix) = parse_connection(&read(dir, "connection_single_column.txt")?)?;
+    // boundary.def (本家 src/data/rules) があれば文節境界ペナルティを付ける
+    let boundary = if dir.join("boundary.def").exists() {
+        let mut table =
+            BoundaryRules::parse(&read(dir, "boundary.def")?)?.table_from_id_def(&id_def);
+        table.resize(num_pos, (0, 0));
+        table
+    } else {
+        Vec::new()
+    };
 
     let mut entries = Vec::new();
     let mut dict_files: Vec<_> = fs::read_dir(dir)
@@ -41,7 +53,7 @@ pub fn load_mozc(dir: &Path) -> Result<IpaDict, String> {
         parse_dictionary(&content, &pos_type, &mut entries);
     }
 
-    build_from_entries(entries, matrix, num_pos)
+    build_from_entries(entries, matrix, num_pos, boundary)
 }
 
 fn read(dir: &Path, name: &str) -> Result<String, String> {
@@ -160,7 +172,7 @@ mod tests {
     fn test_load_mozc_fixture() {
         let dir = std::env::temp_dir().join(format!("jamo-mozc-test-{}", std::process::id()));
         write_fixture(&dir);
-        let dict = load_mozc(&dir).unwrap();
+        let dict = load_mozc(&dir).unwrap().into_bindict().unwrap();
         fs::remove_dir_all(&dir).ok();
 
         assert_eq!(dict.pos_size(), 4);
@@ -194,7 +206,7 @@ mod tests {
             eprintln!("Skipping: data/mozc not found");
             return;
         }
-        let dict = load_mozc(dir).unwrap();
+        let dict = load_mozc(dir).unwrap().into_bindict().unwrap();
         let result = crate::convert_with_conn("きょうはいいてんきですね", &dict, &dict);
         let text: String = result.segments.iter().map(|s| s.surface.as_str()).collect();
         assert!(!text.is_empty());

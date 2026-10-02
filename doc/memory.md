@@ -4,105 +4,85 @@
 
 ```bash
 cargo build --release -p jamo-cli
-python3 scripts/bench-memory.py --with-anthy --with-mozc-server
+python3 scripts/bench-memory.py --with-anthy --with-mozc-server   # ext4 等のページキャッシュ
+python3 scripts/bench-memory.py --shm                             # tmpfs (4KB ページ)
 ```
 
-## 他エンジン比較 (2026-08-19, Linux x86_64, jamo@3d62bdd)
+計測は fork + exec + wait4 だけの C ランチャー (スクリプトが `cc` でビルド) で
+子プロセスの `ru_maxrss` を取る。Python から直接 fork すると exec 前の子が Python の
+RSS (~10MB) を引き継ぎ、それが下限になって小さい値が測れない (旧計測の落とし穴)。
+
+## 他エンジン比較 (2026-10-01, Linux x86_64 6.18, jamo v3)
 
 | エンジン | 辞書データ | peak RSS | 計測条件 |
 |---------|-----------|----------|---------|
-| jamo + mozc.dict | 83.5 MB (.dict) | **152.4 MB** | 変換1回込み |
-| jamo + ipadic.dict | 20.1 MB (.dict) | **42.9 MB** | 変換1回込み |
-| Anthy (anthy-unicode 1.0.0.20260213) | 20.3 MB (anthy.dic) | **16.8 MB** | 付属テスト約550件の変換込み |
-| mozc_server (本家 fcitx5-mozc) | 22.7 MB (バイナリ埋め込み) | **6.2 MB** | 起動直後・変換なし (下限値) |
+| jamo + mozc.dict (v3) | 19.3 MB (.dict) | **4.7 MB** | 変換1回込み (mmap、cold start: `--drop-caches`) |
+| jamo + mozc.dict (v3) | 19.3 MB (.dict) | **8.5 MB** | 56 文 × 21 回変換後 (scripts/bench-engines.py、cold start) |
+| jamo + mozc.dict (v3) | 19.3 MB (.dict) | 17.9 MB | 変換1回込み (mmap、warm: ext4 ページキャッシュに large folio で載った状態) |
+| jamo + mozc.dict (v3) | 19.3 MB (.dict) | 9.5 MB | 変換1回込み (mmap、tmpfs 4KB ページ) |
+| jamo + ipadic.dict (v3) | 8.4 MB (.dict) | **4.0 MB** | 変換1回込み (mmap、cold start) |
+| mozc_server (本家 3.34.6239) | 22.7 MB (バイナリ埋め込み) | **25.2 MB** | 56 文 × 21 回変換後 (bench-engines.py、同じ cold start 条件) |
+| mozc_server (本家 3.34.6239) | 22.7 MB | 17.3 MB | 起動直後・変換なし (2026-10-02 実測) |
+| jamo + mozc.dict (v2、参考) | 83.5 MB (.dict) | 152.6 MB | 変換1回込み (全ヒープ展開) |
+| jamo + ipadic.dict (v2、参考) | 20.1 MB (.dict) | 42.9 MB | 変換1回込み |
+| Anthy (anthy-unicode 1.0.0.20260213) | 20.3 MB (anthy.dic) | 16.8 MB | 付属テスト約550件の変換込み (2026-08-19) |
+| mozc_server (本家 fcitx5-mozc) | 22.7 MB (バイナリ埋め込み) | 6.2 MB | 起動直後・変換なし (下限値、2026-08-19) |
 
-- mozc_server はクライアントなしでは変換を実行できないため起動直後の値。
-  辞書をバイナリに埋め込み mmap + lazy load するため、変換後も
-  バイナリサイズ 22.7 MB + 作業領域が上限の目安。計測環境ではデーモンが
-  即終了するため手動起動で2回観測した値 (6.2 / 6.3 MB)。
-  `bench-memory.py --with-mozc-server` は観測できない環境では skip する。
-- 同じ mozc dictionary_oss ソースを、本家は 22.7 MB のバイナリに収め、
-  jamo の .dict は 83.5 MB、ロード後 152 MB。データ量ではなく
-  エンジン実装 (フォーマットとロード方式) の差。
+- jamo-cli 自体のベースライン (辞書を開かない usage 表示) は 3.3 MB。
+- **warm と cold で差が出る理由**: Linux 6.x のページキャッシュは large folio で、
+  キャッシュ済みのファイルを mmap すると 1 バイト触れるだけで 2MB 単位がマップされる
+  (`/proc/self/smaps` で確認: 1 バイト → Rss 2048 kB)。辞書 19.3 MB のほぼ全域に薄く
+  触れるため warm では辞書サイズ近くまで RSS が伸びる。`--drop-caches` で捨ててから
+  測ると 4KB ページ単位でフォルトし、実際に触れたページだけになる (1 バイト → 4 kB)。
+  tmpfs (4KB ページ、fault-around 64KB) も近い値。組み込み (DM250 の SD など) の
+  ワーキングセットは cold の値が目安。
+- mozc_server は root では起動を拒否する (geteuid()==0 で abort)。一般ユーザーで起動し、
+  本家の IPC で変換を流して測った (doc/bench.md)。本家は辞書をバイナリに埋め込み
+  mmap + lazy load するが、変換を流すと 25 MB に達する。
+- 同じ mozc dictionary_oss ソースを、本家は 22.7 MB のバイナリ (辞書 + 接続行列の
+  データ部は 16.87 MB)、jamo v3 は 19.3 MB の .dict に収める。バイナリ対バイナリでは
+  jamo が小さく、データ対データでは 2.4 MB 及ばない (T151 の bit 符号化で追う)。
+- 変換時の RSS は jamo 8.5 MB vs 本家 25.2 MB (同じ 56 文、cold start)。
 
-## 辞書バイナリ内訳 (フォーマット v2)
+## 辞書バイナリ内訳 (フォーマット v3)
 
-`cargo run -p jamo-cli --release -- dict info data/mozc.dict` (2026-08-19):
-
-```
-data/mozc.dict (v2, total 83.5 MB)
-louds bitvec          1.1 MB    1.3%  8773677 bits
-labels                4.4 MB    5.3%  4386839 nodes
-terminal             35.1 MB   42.0%  4386839 nodes, sentinel 83.0%
-entries              28.7 MB   34.3%  1289076 entries
-  surface            17.1 MB   20.5%  uniq 983570 (13.4 MB)
-  fixed 9B           11.6 MB   13.9%  left/right/cost/pos_type + len
-conn matrix          14.3 MB   17.1%  num_pos 2672
-stats: vocab 1289076, readings 745965
-```
-
-主な無駄:
-
-1. **ロード方式**: 全エントリを `String`/`Vec` にヒープ展開するため、
-   ファイル 83.5 MB が RSS 152 MB に膨張する (約1.8倍)
-2. **terminal 35.1 MB**: 83% が非終端ノードのセンチネル (0xFFFFFFFF)。
-   終端フラグ BitVec + 終端のみの配列にすれば ~4 MB
-3. **恒等表層**: 表層が読みのひらがな/カタカナと一致するエントリが
-   31.8% (ひらがな 7.3% + カタカナ 24.5%)、表層バイトの 41% (7.1 MB)。
-   読みから生成可能なので格納不要にできる
-4. **接続行列 14.3 MB**: num_pos 2672 の素の i16 密行列
-
-恒等表層の計測 (mozc ソーステキストに対して。カタカナ→ひらがな正規化後の
-読みと表層を比較):
-
-```python
-# data/mozc/dictionary*.txt: 読み\tleft\tright\tcost\t表層
-def kata_to_hira(s):
-    return ''.join(chr(ord(c)-0x60) if 0x30A1 <= ord(c) <= 0x30F6 else c for c in s)
-# surface == kata_to_hira(yomi)        → ひらがな恒等 (7.3%)
-# kata_to_hira(surface) == kata_to_hira(yomi) → カタカナ恒等 (24.5%)
-```
-
-対処は Iter 9 (doc/tasks.md) を参照。
-
-## mozc_server バイナリ 22.7MB の内訳 (2026-08-19)
-
-比較基準の「本家 22.7MB」の中身を実測した。readelf でコード (.text) は
-2.9MB のみで、.rodata 19.2MB のほぼ全体が埋め込み mozc dataset
-(magic `\xEF MOZC\r\n` を .rodata 先頭で確認)。dataset 末尾の TOC
-(protobuf DataSetMetadata: name/offset/size の46エントリ、合計 18.9MB で
-.rodata と整合) をパースした主要チャンク:
-
-| チャンク | サイズ | 対応する jamo セクション |
-|---------|-------|------------------------|
-| dict (読みtrie + token + 表層) | 14.65 MB | trie + token + 表層プール (v3 見積 15.2MB) |
-| conn (接続行列) | 2.22 MB | conn matrix (v3 見積 2.7MB) |
-| その他 (絵文字/zero query/単漢字/記号/usage 等) | ~2.0 MB | 対応機能なし |
-
-jamo と同等機能のデータは **dict + conn = 16.87MB**。v3 見積もり 17.92MB は
-バイナリ全体 (22.7MB) には勝つが、データ対データでは 1.05MB 及ばない。
-
-## v3 サイズ見積もり (2026-08-19)
-
-`scripts/estimate-v3.py` による mozc 実データでの事前検証。trie ノード数は
-ソート済みキーの LCP 法で算出し、v2 の実ノード数 (4386839) と一致することで
-手法を検証している。
+`cargo run -p jamo-cli --release -- dict info data/mozc.dict` (2026-10-01):
 
 ```
-reading trie (1B enc)            2.69 MB
-token (4B + 3B non-ident)        7.80 MB
-combo table                      0.06 MB
-surface pool (encoded)           4.64 MB
-conn matrix (varint)             2.73 MB
-v3 TOTAL                        17.92 MB  (目標 <= 20 MB、本家 mozc_server 22.7 MB)
+data/mozc.dict (v3, total 19.3 MB)
+louds bitvec         0.80 MB    4.2%
+labels               1.84 MB    9.5%
+terminal bitvec      0.40 MB    2.1%
+entry bounds         0.28 MB    1.5%
+tokens               5.16 MB   26.8%
+combos               0.06 MB    0.3%
+nonident bitvec      0.28 MB    1.5%
+surface ids          2.67 MB   13.9%
+surface pool         3.99 MB   20.7%
+surface bounds       0.87 MB    4.5%
+conn matrix          2.89 MB   15.0%
+trie nodes 1837020, tokens 1289076, id combos 11370, pool surfaces 698652,
+matrix 2672x2672 (exceptions 884398)
 ```
 
-- 素朴な積み上げ (terminal 配列を残す・表層 UTF-8・行列例外固定長) は
-  27.2MB で目標に届かない。エントリ境界 BitVec 化・表層の可変長文字符号化・
-  行列例外 varint の3施策で 17.92MB になる
-- 表層は trie 化 (4.0MB) と可変長文字符号化 (3.9MB) がほぼ同等 → 実装と
-  復元が単純な符号化を採用
-- 読みの文字種は 255 で1バイト符号の上限ぎりぎり。追加辞書で増える場合の
-  エスケープ設計が必要 (T148)
-- RSS 見込み: ファイル 17.9MB (mmap) + rank/select 再構築 + 変換作業領域
-  で ~20MB (目標 ≤ 25MB)
+v2 (83.5 MB、RSS 152 MB) からの削減の内訳 (doc/dict-format.md):
+
+1. **ロード方式**: 全エントリの String/Vec ヒープ展開をやめ、mmap したバイト列を
+   借用参照する。ロード 0.20 s → 0.1 ms
+2. **terminal 35.1 MB → 0.7 MB**: 83% が非終端センチネルだった (start, end) 配列を
+   終端フラグ BitVec + エントリ境界 BitVec (select で範囲) にした
+3. **恒等表層 (31.7%)**: 読みから生成できる表層をフラグ化し格納しない
+4. **表層プール 8.3 MB → 4.0 MB**: 可変長文字符号化 (上位 224 字 = 1 バイト)
+5. **読み 1 バイト符号**: trie ノード 4.39M → 1.84M (41.9%)
+6. **接続行列 14.3 MB → 2.9 MB**: 行最頻値デフォルト + 例外 BitVec + コスト配列。
+   参照は rank 1 回で O(1) (varint 案はスキャンが要るので却下)
+
+## 残る削減余地
+
+- tokens 5.16 MB + surface ids 2.67 MB: combo の頻度順 Huffman、同読み内コストの
+  差分 varint、表層 id の頻度順並べ替え (T151)
+- 変換時のワーキングセット (tmpfs 計測で辞書分 ~6 MB): 各 BitVec の rank 索引・select
+  サンプルを本体と別領域に置いているため、1 回の rank/select で 2〜3 ページに触れる。
+  索引をブロックにインターリーブすればページ数を減らせる (T150 の続き)
+- PRD の embedded 予算 ~2 MB は cgroup MemoryMax 下での完走テストで検証する予定
+  だったが、この環境は cgroup v1 (cpu のみ) で memory コントローラが使えず未実施

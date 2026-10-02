@@ -70,14 +70,12 @@ fn test_cli_dict_build_and_info() {
     assert!(info.status.success(), "dict info failed: {info:?}");
     let stdout = String::from_utf8(info.stdout).expect("invalid utf8");
     assert!(stdout.contains("total"), "should print total: {stdout}");
+    assert!(stdout.contains("tokens 1"), "should count tokens: {stdout}");
     assert!(
-        stdout.contains("1 entries"),
-        "should count entries: {stdout}"
+        stdout.contains("matrix 1x1"),
+        "should show matrix size: {stdout}"
     );
-    assert!(
-        stdout.contains("num_pos 1"),
-        "should show num_pos: {stdout}"
-    );
+    assert!(stdout.contains("vocab 1"), "should show vocab: {stdout}");
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }

@@ -25,6 +25,16 @@ pub trait Dictionary {
     /// 入力のプレフィックスにマッチする全エントリを返す
     /// 戻り値: (マッチしたバイト長, エントリ一覧) のリスト
     fn common_prefix_search(&self, input: &str) -> Vec<(usize, Vec<Entry>)>;
+
+    /// 変換キーの先頭に来るノードへのペナルティ (left_id ごと、boundary.def 由来)
+    fn prefix_penalty(&self, _left_id: u16) -> i32 {
+        0
+    }
+
+    /// 変換キーの末尾に来るノードへのペナルティ (right_id ごと)
+    fn suffix_penalty(&self, _right_id: u16) -> i32 {
+        0
+    }
 }
 
 /// ハードコードされたテスト用辞書 (HashMap)

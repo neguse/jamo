@@ -2,7 +2,7 @@
 
 ## バージョン
 
-**0.2.0** (2026-08-19) — crates.io 未公開につき pre-1.0 の 0.x に整理。C API は第2世代 (セッション型)。エンジン・辞書フォーマットは据え置き。
+**0.2.0** (2026-08-19) — crates.io 未公開につき pre-1.0 の 0.x に整理。C API は第2世代 (セッション型)。辞書フォーマットは v3 (ゼロコピー、2026-10-01、v2 は読めないので `jamo dict build` で再構築)。
 
 ## イテレーション進捗
 
@@ -15,9 +15,27 @@
 | 4 | 完了 | 品質→1.0 |
 | 5 | 進行中 | Windows IME |
 | 8 | 進行中 | 変換精度・C API v2 (T130-T134 完了) |
-| 9 | バックログ | 省メモリ辞書 (ゼロコピー v3、T140 完了)。主KPI: 物理メモリ ~2MB での変換動作 (mmap)。短期の必要なしと判断し保留 |
+| 9 | ほぼ完了 | 省メモリ辞書 (ゼロコピー v3): T140-T149 完了。.dict 83.5→19.3MB、peak RSS 152.6→17.9MB (ext4) / 9.5MB (tmpfs)。残: T150 cgroup 検証、T151 bit 符号化 |
 | 10 | 完了 | 入力体験 (キー一打の手触り): T160-T165 完了。lite-dm2x の host ハーネス (`just test-ime`) と DM250 実機 (2026-08-25、keyin 注入 + screenshot) で検証済み |
 | 11 | 完了 | Linux IME (fcitx5): T170 アドオン + E2E (CI は Arch コンテナ)、T171 Omarchy 実機導入 |
+| 12 | 完了 | 本家 mozc との比較: T180 bench-engines.py (IPC で mozc_server を駆動)、T181 文節境界ペナルティ (boundary.def) |
+
+## ゴール (2026-10-01): mozc より省メモリ・高速で、精度は同等以上
+
+同一コーパス (56 文) で本家 mozc_server と直接比較した (scripts/bench-engines.py、doc/bench.md、2026-10-02、cold start):
+
+| 軸 | jamo v3 (mozc 辞書) | 本家 mozc_server 3.34 | 状態 |
+|----|--------------------|-----------------|------|
+| 辞書バイナリ | **19.3 MB** (.dict) | 22.7 MB (バイナリ埋め込み、データ部 16.87 MB) | 勝ち (バイナリ対バイナリ)。データ対データは 2.4 MB 及ばない (T151) |
+| peak RSS (56 文 × 21 回変換後) | **8.5 MB** | 25.2 MB (起動直後 17.3 MB) | 勝ち |
+| 変換レイテンシ 平均 / p50 / p95 | **57 / 33 / 128 us** | 1246 / 930 / 2561 us (IPC 往復込み) | 勝ち (往復 ~0.6 ms を差し引いても 10 倍以上) |
+| 起動 | **2.4 ms** | 116.6 ms | 勝ち |
+| 精度 Top-1 / Top-5 | 54/56 / 55/56 | 54/56 / 55/56 | 同点。初回は 50/56 で単文節 4 件負けていたが、本家の boundary.def (文節境界ペナルティ) を移植して同点 |
+
+残る 2 文 (からかさ→傘、あたたかい→温かい) は本家も同じ外し方。
+
+次のアクション: (1) T151 の bit 符号化でデータ部 16.87 MB を下回る、(2) T150 の cgroup
+検証、(3) もっと大きいコーパス (本家との差が統計的に出る規模) での精度比較。
 
 ## Iter 11: Linux IME (fcitx5)
 
@@ -60,20 +78,23 @@ Hyprland / sway は text-input のカーソル矩形の更新で popup を置き
 
 ## パフォーマンス
 
-| 項目 | 値 |
-|------|-----|
-| 変換 (短文) | 10us |
-| 変換 (中文) | 87us |
-| 変換 (長文) | 99us |
-| 辞書ロード | 64ms |
-| prefix_search | 1-2us |
-| WASM バイナリ | 144KB |
-| 辞書バイナリ (IPAdic) | 19.2MB |
-| 辞書バイナリ (mozc) | 79.7MB (ロード 0.20s) |
-| 共有ライブラリ | 497KB |
+| 項目 | v3 (2026-10-01) | v2 (同環境で再計測) |
+|------|-----|-----|
+| 変換 (短文) | 12.8us | 14.0us |
+| 変換 (中文) | 95us | 114us |
+| 変換 (長文) | 107us | 122us |
+| 変換 (複雑) | 131us | 157us |
+| 辞書ロード (IPAdic) | 93us (mmap) | 87ms |
+| prefix_search | 1.9-5.9us | 1.6-3.0us |
+| WASM バイナリ | 144KB | |
+| 辞書バイナリ (IPAdic) | 8.4MB | 19.2MB |
+| 辞書バイナリ (mozc) | 19.3MB (ロード 0.1ms) | 79.7MB (ロード 0.20s) |
+| peak RSS (mozc 辞書、変換 1 回) | 17.9MB ext4 / 9.5MB tmpfs | 152.6MB |
 
+criterion (IPAdic、`cargo bench -p jamo-core`)。v3 の変換が速いのは Viterbi の前ノード
+集約 (right_id ごと) と (開始位置, left_id) ごとの最良メモ化で接続コスト参照が激減した
+ため (接続コスト 1 回は v2 の 1.7ns → v3 4.7ns と遅いが、回数が 1/5 以下)。
 実行時メモリ (peak RSS) の実測と他エンジン比較は doc/memory.md を参照。
-mozc 構成 152.4MB の削減が Iter 9 のテーマ。
 
 ## 精度
 
@@ -81,7 +102,7 @@ mozc 構成 152.4MB の削減が Iter 9 のテーマ。
 
 | 指標 | 値 |
 |------|-----|
-| Top-1 | **89.3%** |
+| Top-1 | **96.4%** (54/56、本家 mozc_server と同点) |
 | Top-5 (候補選択で到達可能) | **98.2%** |
 
 `scripts/fetch-mozc.sh && jamo dict build --dict data/mozc -o data/mozc.dict` で構築。
@@ -135,7 +156,7 @@ jamo-core/cbindgen.toml -o jamo-core/include/jamo.h jamo-core`)。lite-dm2x 側
 
 ## テスト
 
-全236テスト通過 (2026-08-23 実測、cargo test)
+全241テスト通過 (2026-10-02 実測、cargo test。IPAdic / mozc データあり)
 
 ## プロジェクト構成
 
@@ -143,7 +164,10 @@ jamo-core/cbindgen.toml -o jamo-core/include/jamo.h jamo-core`)。lite-dm2x 側
 jamo/
 ├── jamo-core/          # 変換エンジン (Rust lib)
 │   └── src/
-│       ├── ipc.rs      # [NEW] IPC プロトコル型 (ipc feature)
+│       ├── bindict/    # v3 ゼロコピー辞書 (format / build / charcode)
+│       ├── bitvec.rs   # rank/select ビット列 (BitVec = ビルド、BitView = 借用)
+│       ├── ipadic.rs   # 辞書ソース (IPAdic CSV / mozc TSV) のパース → v3 ビルド
+│       ├── ipc.rs      # IPC プロトコル型 (ipc feature)
 │       └── romaji.rs   # ローマ字→ひらがな変換 FSM
 ├── jamo-cli/           # CLI・サーバー (Rust bin)
 │   └── src/

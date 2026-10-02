@@ -3,8 +3,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
+use jamo_core::bindict::BinDict;
 use jamo_core::ipadic::IpaDict;
 
+mod bench;
 mod ime_server;
 mod serve;
 
@@ -20,6 +22,7 @@ fn main() {
         "convert" => cmd_convert(&args[2..]),
         "serve" => cmd_serve(&args[2..]),
         "dict" => cmd_dict(&args[2..]),
+        "bench" => cmd_bench(&args[2..]),
         _ => {
             eprintln!("Unknown command: {}", args[1]);
             print_usage();
@@ -39,6 +42,7 @@ fn print_usage() {
     );
     eprintln!("  dict merge --base <dir> --extra <path>... -o <output>  辞書マージ");
     eprintln!("  dict info <dict>               辞書バイナリのセクション別内訳");
+    eprintln!("  bench [--dict DIR] [--repeat N] <corpus.tsv>  精度・レイテンシ・メモリ計測");
 }
 
 /// 引数から --dict DIR を抽出。残りの引数も返す。
@@ -69,21 +73,34 @@ fn load_source_dir(dir: &Path) -> IpaDict {
     }
 }
 
-fn load_dict(dict_path: Option<&str>) -> Arc<IpaDict> {
+/// ソースディレクトリを読んで v3 バイナリに構築し、変換用辞書として開く
+fn build_source_dir(dir: &Path) -> BinDict {
+    load_source_dir(dir)
+        .into_bindict()
+        .expect("failed to build dictionary")
+}
+
+fn open_binary(path: &Path) -> BinDict {
+    eprintln!("Loading binary dict from {}...", path.display());
+    BinDict::open(path).unwrap_or_else(|e| {
+        eprintln!("Error: {}: {e}", path.display());
+        std::process::exit(1);
+    })
+}
+
+fn load_dict(dict_path: Option<&str>) -> Arc<BinDict> {
     let start = Instant::now();
 
     // バイナリ辞書を優先
     if let Some(path) = dict_path {
         let bin_path = Path::new(path).with_extension("dict");
-        if bin_path.exists() {
-            eprintln!("Loading binary dict from {}...", bin_path.display());
-            let dict = IpaDict::load_binary(&bin_path).expect("failed to load binary dict");
-            eprintln!("Loaded in {:.2}s", start.elapsed().as_secs_f64());
-            return Arc::new(dict);
-        }
-        let dict = Arc::new(load_source_dir(Path::new(path)));
+        let dict = if bin_path.exists() {
+            open_binary(&bin_path)
+        } else {
+            build_source_dir(Path::new(path))
+        };
         eprintln!("Loaded in {:.2}s", start.elapsed().as_secs_f64());
-        return dict;
+        return Arc::new(dict);
     }
 
     // デフォルトパスを試す (バイナリ優先、mozc 辞書があればそちらを優先)
@@ -95,8 +112,7 @@ fn load_dict(dict_path: Option<&str>) -> Arc<IpaDict> {
     ];
     for p in bin_candidates {
         if Path::new(p).exists() {
-            eprintln!("Loading binary dict from {p}...");
-            let dict = IpaDict::load_binary(Path::new(p)).expect("failed to load binary dict");
+            let dict = open_binary(Path::new(p));
             eprintln!("Loaded in {:.2}s", start.elapsed().as_secs_f64());
             return Arc::new(dict);
         }
@@ -105,7 +121,7 @@ fn load_dict(dict_path: Option<&str>) -> Arc<IpaDict> {
     let candidates = ["data/mozc", "../data/mozc", "data/ipadic", "../data/ipadic"];
     for p in candidates {
         if Path::new(p).exists() {
-            let dict = Arc::new(load_source_dir(Path::new(p)));
+            let dict = Arc::new(build_source_dir(Path::new(p)));
             eprintln!("Loaded in {:.2}s", start.elapsed().as_secs_f64());
             return dict;
         }
@@ -130,6 +146,39 @@ fn cmd_convert(args: &[String]) {
 
     let text: String = result.segments.iter().map(|s| s.surface.as_str()).collect();
     println!("{text}");
+}
+
+fn cmd_bench(args: &[String]) {
+    let (dict_path, rest) = parse_dict_arg(args);
+    let mut repeat = 20;
+    let mut corpus = None;
+    let mut i = 0;
+    while i < rest.len() {
+        if rest[i] == "--repeat" && i + 1 < rest.len() {
+            repeat = rest[i + 1].parse().unwrap_or(20);
+            i += 2;
+        } else {
+            corpus = Some(rest[i].clone());
+            i += 1;
+        }
+    }
+    let Some(corpus) = corpus else {
+        eprintln!("Usage: jamo bench [--dict DIR] [--repeat N] <corpus.tsv>");
+        std::process::exit(1);
+    };
+
+    let start = Instant::now();
+    let dict = load_dict(dict_path.as_deref());
+    let load_us = start.elapsed().as_secs_f64() * 1e6;
+    let dict_bytes = dict.len() as u64;
+    let args = bench::BenchArgs {
+        corpus: Path::new(&corpus),
+        repeat,
+    };
+    if let Err(e) = bench::run(&dict, dict_bytes, load_us, &args) {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
 }
 
 fn cmd_serve(args: &[String]) {
@@ -184,66 +233,36 @@ fn cmd_dict_info(args: &[String]) {
         eprintln!("Usage: jamo dict info <dict>");
         std::process::exit(1);
     };
-    let data = std::fs::read(path).unwrap_or_else(|e| {
+    let dict = BinDict::open(Path::new(path)).unwrap_or_else(|e| {
         eprintln!("Error: {path}: {e}");
         std::process::exit(1);
     });
-    let s = jamo_core::dict_stats::dict_stats(&data).unwrap_or_else(|e| {
+    if let Err(e) = dict.verify() {
         eprintln!("Error: {path}: {e}");
         std::process::exit(1);
-    });
+    }
 
-    let total = s.total_bytes as f64;
-    let row = |name: &str, bytes: usize, note: String| {
+    let total = dict.len() as f64;
+    println!("{path} (v3, total {:.1} MB)", total / 1e6);
+    for s in dict.sections() {
         println!(
-            "{name:<16} {:8.1} MB  {:5.1}%  {note}",
-            bytes as f64 / 1e6,
-            bytes as f64 / total * 100.0
+            "{:<16} {:8.2} MB  {:5.1}%",
+            s.name,
+            s.bytes as f64 / 1e6,
+            s.bytes as f64 / total * 100.0
         );
-    };
-    println!("{path} (v{}, total {:.1} MB)", s.version, total / 1e6);
-    row(
-        "louds bitvec",
-        s.louds_bytes,
-        format!("{} bits", s.louds_bits),
-    );
-    row("labels", s.labels_bytes, format!("{} nodes", s.node_count));
-    row(
-        "terminal",
-        s.terminal_bytes,
-        format!(
-            "{} nodes, sentinel {:.1}%",
-            s.terminal_count,
-            s.sentinel_count as f64 / s.terminal_count.max(1) as f64 * 100.0
-        ),
-    );
-    row(
-        "entries",
-        s.entries_bytes,
-        format!("{} entries", s.entry_count),
-    );
-    row(
-        "  surface",
-        s.surface_bytes,
-        format!(
-            "uniq {} ({:.1} MB)",
-            s.surface_uniq_count,
-            s.surface_uniq_bytes as f64 / 1e6
-        ),
-    );
-    row(
-        "  fixed 9B",
-        s.entry_fixed_bytes,
-        "len + left/right/cost/pos_type".to_string(),
-    );
-    row(
-        "conn matrix",
-        s.matrix_bytes,
-        format!("num_pos {}", s.num_pos),
+    }
+    let (nodes, tokens, combos, surfaces, exceptions) = dict.counts();
+    println!(
+        "trie nodes {nodes}, tokens {tokens}, id combos {combos}, pool surfaces {surfaces}, \
+         matrix {}x{} (exceptions {exceptions})",
+        dict.pos_size(),
+        dict.pos_size()
     );
     println!(
         "stats: vocab {}, readings {}",
-        s.vocab_size, s.reading_count
+        dict.vocab_size(),
+        dict.reading_count()
     );
 }
 

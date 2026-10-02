@@ -530,3 +530,49 @@
 - よかったこと: `jamo-cli serve --ime --dict data/ipadic` をデータなしで起動すると `failed to load IPAdic` で panic し exit 101 になることを Linux で再現でき、CI の失敗 (`exited early with code 101`) と一致した
 - 判断: check ジョブと同じ取得スクリプトを Git Bash で使う (smoke は IPAdic のソースディレクトリを直接読む)
 - 残課題: なし
+
+### T141-T149 辞書フォーマット v3 (ゼロコピー、mmap) ✓ (2026-10-01)
+- やったこと:
+    - ゴール「mozc より省メモリ・高速で、精度は同等以上」を受けて Iter 9 に着手。jamo-core/src/bindict/ (format / build / charcode) を新設し、ファイルレイアウト = メモリレイアウトの v3 を実装。`BinDict` は Vec または mmap (memmap2、MADV_RANDOM) のバイト列を所有し、Dictionary + ConnectionCost を借用参照で実装する
+    - 読みは頻度上位 255 文字の 1 バイト符号 (表外は 0 + UTF-8) で LOUDS trie 化 (ノード 4.39M → 1.84M)。終端フラグ + エントリ境界 BitVec で select から範囲を引く。(left,right,pos_type) は combo 表 (14 bit)、読みと同一の表層 (ひらがな/カタカナ) は 2 bit フラグ、残りは可変長文字符号化 (224 字 = 1B / 7936 字 = 2B / 残り 3B) した共有プールを u24 で参照
+    - 接続行列は行最頻値デフォルト + 例外 BitVec + コスト配列 (rank 1 回で O(1))。14.3 → 2.9 MB
+    - bitvec.rs を書き直し: `BitVec` (ビルド・直列化) と `BitView` (借用 rank/select)。rank 索引は 256bit ごとに u64 1 本 (累積 u32 + 小ブロック u8×3 をインターリーブ)、select は 64 個ごとのサンプル + ブロック走査。索引もファイルに含めロード時再構築なし。接続行列用に select サンプルなしの直列化も用意
+    - `IpaDict` はソース (IPAdic CSV / mozc TSV) パース + v3 ビルド専用に縮退。v2 (louds.rs、dict_stats.rs、v2 read/write)、scripts/estimate-v3.py を削除。CLI / serve / IME IPC / C API / WASM / bench / accuracy_test を `BinDict` に乗せ換え (C API は mmap、wasm32 は from_vec)。`jamo dict info` は v3 セクション内訳 + `verify` (全 BitVec 索引・参照範囲の深い検証)
+    - IPAdic の "," は CSV 分割で表層が空になり、空表層はプール境界 BitVec で表現できないためソース側で捨て、ビルド側はエラーにする
+    - scripts/bench-memory.py: fork+exec+wait4 の C ランチャーで計測 (Python fork は子に ~10MB の RSS を引き継ぎ下限になる)、`--shm` で tmpfs (4KB ページ) 計測
+    - 実測 (mozc 辞書): .dict 83.5 → 19.3 MB、peak RSS 152.6 → 17.9 MB (ext4) / 9.5 MB (tmpfs)、ロード 0.20 s → 0.1 ms。IPAdic は 19.2 → 8.4 MB、42.9 → 11.2 / 7.0 MB。精度は mozc Top-1 89.3% / Top-5 98.2%、IPAdic 42.9% / 71.4% で v2 と同一 (v2 を同一データで再計測して確認)
+- 変更したファイル: jamo-core/src/bindict/{mod,format,build,charcode,tests}.rs (新規), jamo-core/src/bitvec.rs, jamo-core/src/ipadic.rs, jamo-core/src/ipadic/tests.rs, jamo-core/src/lib.rs, jamo-core/src/capi.rs, jamo-core/src/wasm.rs, jamo-core/src/mozc.rs, jamo-core/src/louds.rs (削除), jamo-core/src/dict_stats.rs (削除), jamo-core/Cargo.toml, jamo-core/benches/convert_bench.rs, jamo-core/tests/accuracy_test.rs, jamo-cli/src/{main,serve,ime_server}.rs, jamo-cli/tests/cli_test.rs, scripts/bench-memory.py, scripts/estimate-v3.py (削除), doc/dict-format.md, doc/memory.md, doc/tasks.md, doc/current.md, README.md, doc/done.md
+- よかったこと: 全セクションを `&[u8]` + from_le_bytes で読むので unsafe は mmap の 1 箇所だけで済み、アライメント要件もない。estimate-v3.py の事前見積もり (17.92 MB) と実測 (19.3 MB、差は索引の内蔵分) がほぼ一致し、設計を迷わず実装できた。IPAdic 検証でビルド側と検証側の両方が「空表層」を別々に検出でき、BitVec 境界表現の前提 (非空) を明文化できた
+- 判断: `memmap2::Advice` (madvise) は unix 専用なので `#[cfg(unix)]` で囲む (Windows CI で発覚)。行列の varint 圧縮案 (見積 2.7 MB) は参照にスキャンが要るので却下し、BitVec + rank (2.9 MB、O(1)) にした。`BinDict::open` は構造検証のみでファイル全体に触れない (mmap の遅延ロードを保つ)、深い検証は `verify` に分離。壊れた内容でも panic しない (境界検査つき) ことをテストで担保。unsafe は CLAUDE.md の「ffi.rs のみ」の例外として `BinDict::open` の mmap 1 箇所に限定 (SAFETY コメントつき)。Linux 6.x の large folio ページキャッシュでは mmap 辞書に 1 バイト触れると 2 MB 単位でマップされるため、組み込みの目安は tmpfs 計測 (4KB ページ) とした。v2 との互換 shim は作らない (pre-1.0)
+- 残課題: T150 (cgroup MemoryMax 下の完走テスト。この環境は cgroup v1 で memory コントローラなし)、T151 (tokens 5.2 MB + surface ids 2.7 MB の bit 符号化でデータ対データ 16.87 MB を下回る)、rank 索引のブロック内インターリーブで変換時のページ数削減。本家 mozc_server の変換込み RSS / レイテンシ / 精度は本家が動く環境で要計測。prefix_search (予測) は v2 より 1.5-2 倍遅い (select 2 回 + DFS でのキー復元)
+
+### Viterbi の接続コスト参照を集約・メモ化 ✓ (2026-10-01)
+- やったこと: 前進パスで、位置ごとに「そこで終わるノード」を right_id ごとの最良 1 つに集約し、さらに (開始位置, left_id) ごとに「前ノード群 + 接続コスト」の最良をメモ化。接続コスト参照回数が ノード数 × 前ノード数 から 異なり left_id 数 × 異なり right_id 数 に減る。長さ 0 ノード (EOS) はその位置の集約が確定してから緩和する。lattice のノード生成でエントリ表層を clone せず move。criterion (IPAdic): 短文 14.0 → 12.8us、中文 114 → 95us、長文 122 → 107us、複雑 157 → 131us (v2 比)。mozc 辞書の中文は 150 → 129us
+- 変更したファイル: jamo-core/src/viterbi.rs, jamo-core/src/lattice.rs, doc/current.md, doc/done.md
+- よかったこと: callgrind で `ConnectionCost::cost` が 38% と出て対処が一意に決まった。v3 の圧縮行列は 1 参照 4.7ns と v2 の密行列 (1.7ns) より遅いが、参照回数を減らすことで差し引き v2 より速くなった
+- 判断: 密行列をメモリに展開する案 (14 MB) はゴールに反するので却下。集約は Viterbi の最適性を変えない (同じ right_id の前ノードは次ノードから区別できない) ため精度テストは不変。同コストのタイブレークは変わりうるが候補順への影響はない
+- 残課題: 候補生成 (decode_nbest 後半) と文字列アロケーションが残りの主要コスト。prefix_search の select 回数削減
+
+### T180 本家 mozc との比較ベンチ (scripts/bench-engines.py) ✓ (2026-10-02)
+- やったこと:
+    - `jamo bench <corpus.tsv>` サブコマンド (jamo-cli/src/bench.rs): コーパス一括変換で Top-1 / Top-5 (候補選択で到達可能) / レイテンシ (1 回ウォームアップ後 repeat 回の平均、p50/p95) / VmHWM を TSV + `#summary` JSON で出す
+    - 精度コーパスを jamo-core/tests/corpus.tsv に出し、accuracy_test.rs は include_str! で読む (bench と共用)
+    - scripts/bench-engines.py: mozc_server を起動し本家クライアントと同じ IPC で駆動する。abstract unix socket `\0tmp/.mozc.<key>.session` (key は ~/.config/mozc/.session.ipc の protobuf) に commands.Input を生で送って half-close し commands.Output を受ける。かなは KeyEvent.key_string + AS_IS、Space で変換、preedit.segment が Top-1、all_candidate_words (Right で文節移動) の上位 5 件が Top-5、REVERT で学習させない。protobuf は必要フィールドだけ手で符号化・復号 (group 型含む) し依存なし。root では mozc_server が abort するので `--user` で一般ユーザーとして自分を再実行、`--drop-caches` で cold start 計測。結果は markdown 表 + 両者の差分一覧 + JSON
+    - scripts/bench-memory.py にも `--drop-caches` を追加
+    - 結果 (doc/bench.md): レイテンシ 57 us vs 1246 us、起動 2.4 ms vs 117 ms、バイナリ 19.3 MB vs 22.7 MB、peak RSS 8.5 MB vs 25.2 MB。精度は初回 50/56 vs 54/56 で負け (→ T181 で同点)
+- 変更したファイル: jamo-cli/src/bench.rs (新規), jamo-cli/src/main.rs, jamo-core/tests/corpus.tsv (新規), jamo-core/tests/accuracy_test.rs, scripts/bench-engines.py (新規), scripts/bench-memory.py, doc/bench.md (新規), doc/memory.md, doc/current.md, doc/tasks.md, README.md, doc/done.md
+- よかったこと: mozc_server が root で黙って abort する原因 (geteuid()==0 → tgkill SIGABRT) と、IPC が Command ではなく Input を生で送る形式であることを strace と本家ソース (unix_ipc.cc, session_server.cc) から特定でき、GUI なしで本家を駆動できた。large folio による RSS の水増しは drop_caches で 4KB ページ単位の実測に戻せた (1 バイト触れて 2048 kB → 4 kB)
+- 判断: 本家のレイテンシは IPC 往復込みで比較する (fcitx5-mozc も同じ経路で話すので実使用の値)。往復分 ~0.6 ms を差し引いても 10 倍以上差がある。protobuf ライブラリや grpcio-tools を requirements にしない (手符号化で十分)。zstd 展開は tar --zstd → zstd CLI の順で試す
+- 残課題: 56 文では統計的な差は言えない。大きいコーパスでの比較。本家の予測変換 (サジェスト) は比較対象外
+
+### T181 文節境界ペナルティ (mozc boundary.def の移植) ✓ (2026-10-02)
+- やったこと:
+    - 本家に負けていた単文節 4 件 (いく→いく、くる→くる、かく→各、かわ→側) の原因を特定: 非自立動詞 (〜ていく、コスト 0)、接頭詞「各」(コスト 0)、接尾辞「側」が単独で勝つ。本家は converter/segmenter の boundary データで、変換キー先頭のノードに品詞ごとの PREFIX ペナルティ (動詞,非自立 = 4000)、末尾のノードに SUFFIX ペナルティ (接頭詞 = 4000、名詞,接尾 = 700) を足している
+    - jamo-core/src/boundary.rs: boundary.def の規則 (`PREFIX|SUFFIX <品詞パターン> <コスト>`、`*` = 1 フィールド、`(a|b)` 選択、末尾カンマなしは直後がカンマか末尾) を本家 gen_boundary_data.py と同じ意味でマッチし、id.def から品詞 ID ごとの表を作る
+    - v3 に boundary セクション (14、u16 prefix + u16 suffix × num_pos、空なら 0) を追加。Dictionary trait に prefix_penalty / suffix_penalty (既定 0)、lattice 構築時に start == 0 のノードへ PREFIX、end == 入力長のノードへ SUFFIX を加算
+    - scripts/fetch-mozc.sh が boundary.def も取得。mozc ローダーは boundary.def があれば表を作る (IPAdic は 0)
+    - 結果: Top-1 50/56 → 54/56 (本家と同点)、Top-5 不変、IPAdic 不変。4 件とも本家と同じ答えになった
+- 変更したファイル: jamo-core/src/boundary.rs (新規), jamo-core/src/lib.rs, jamo-core/src/dict.rs, jamo-core/src/lattice.rs, jamo-core/src/bindict/{format,build,mod,tests}.rs, jamo-core/src/ipadic.rs, jamo-core/src/mozc.rs, scripts/fetch-mozc.sh, doc/dict-format.md, doc/current.md, doc/tasks.md, doc/done.md
+- よかったこと: 本家のコスト計算 (immutable_converter.cc の ApplyPrefixSuffixPenalty) を読んで同じ規則ファイルを移植したので、コーパスに合わせた個別調整なしで 4 件全部が本家と同じ答えになった。各 (接頭詞) は 7 フィールド素性に 8 フィールドの「SUFFIX … (各|約|…) 0」規則が当たらず 4000 になる、という本家の挙動も再現している
+- 判断: 辞書コストや接続行列には手を入れない (本家と同じデータ + 同じ規則で同じ答えが出ることを優先)。ペナルティは Lattice::build に入力される範囲の先頭/末尾に適用する (文節伸縮の再変換では各文節の端。文節が付属語で始まらないという意味で妥当)。正規表現 crate は入れず、`*` と選択だけの小さなマッチャで足りる
+- 残課題: 本家の segmenter (文節境界の可否ビット表) は未移植。jamo の文節分けは pos_type (自立/付属) のまま。残り 2 文は本家も同じ外し方で、文脈モデル (T022 bigram) の領域
