@@ -419,11 +419,15 @@ jamo が省メモリ・高速で精度同等以上であること。結果は do
 - 精度の差 (単文節 4 件) は本家の boundary.def (文節境界ペナルティ) の移植で埋める。
   辞書コスト・接続行列の改変や、コーパスに合わせた個別調整はしない
 - コーパスは jamo-core/tests/corpus.tsv に出し、accuracy_test.rs と bench で共用する
+- 記号の全角/半角は辞書ではなく候補の後処理で出す (本家も symbol.tsv ではなく
+  variants_rewriter が担う)。記号の仲間の候補 (「→『【、はてな→？) は symbol.tsv の
+  領域で別タスク
 
 | # | タスク | 成果物 |
 |---|--------|--------|
 | T180 ✓ | 比較ベンチ | scripts/bench-engines.py (jamo `bench` サブコマンド + mozc IPC クライアント)、doc/bench.md |
 | T181 ✓ | 文節境界ペナルティ | jamo-core/src/boundary.rs (boundary.def の規則マッチ)、v3 boundary セクション、lattice 先頭/末尾ノードへの加算。Top-1 50/56 → 54/56 |
+| T182 ✓ | 記号の全角/半角候補 | 記号だけの単語の幅を反転した候補 (？→?、(→（、。→.)。記号だけの文節は 2 位、語に付いた記号は末尾 |
 
 ---
 

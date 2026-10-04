@@ -568,3 +568,39 @@ fn test_function_word_alternatives_are_not_clause_candidates() {
     assert!(c.contains(&"京は".to_string()), "{c:?}");
     assert!(!c.contains(&"今日葉".to_string()), "{c:?}");
 }
+
+// ---- 記号の全角/半角候補 ----
+
+fn clause_candidates(dict: &HashMapDict, input: &str) -> Vec<Vec<String>> {
+    let mut lattice = Lattice::build(input, dict);
+    let result = decode_nbest(&mut lattice, input, &SimpleConnectionCost, 5);
+    result.clauses.into_iter().map(|c| c.candidates).collect()
+}
+
+#[test]
+fn test_symbol_clause_has_other_width_second() {
+    let dict = HashMapDict::test_dict();
+    let c = clause_candidates(&dict, "？");
+    assert_eq!(c[0][..2], ["？", "?"]);
+    let c = clause_candidates(&dict, "(");
+    assert_eq!(c[0][..2], ["(", "（"]);
+}
+
+#[test]
+fn test_symbol_after_word_gets_half_width() {
+    let mut dict = HashMapDict::test_dict();
+    dict.add("なに", "何", 0, 0, -3000, POS_CONTENT);
+    let c = clause_candidates(&dict, "なに？");
+    assert!(
+        c.iter().flatten().any(|s| s.ends_with('?')),
+        "半角 ? の候補があるはず: {c:?}"
+    );
+}
+
+#[test]
+fn test_long_vowel_in_word_is_not_flipped() {
+    let mut dict = HashMapDict::test_dict();
+    dict.add("らーめん", "ラーメン", 0, 0, -3000, POS_CONTENT);
+    let c = clause_candidates(&dict, "らーめん");
+    assert!(!c.iter().flatten().any(|s| s.contains('-')), "{c:?}");
+}

@@ -304,20 +304,19 @@ pub fn kana_to_romaji(kana: &str) -> String {
         }
         match romaji_for_kana(&ch.to_string()) {
             Some(roma) => out.push_str(roma),
-            None => {
-                let punct = PUNCTUATION_TABLE
-                    .iter()
-                    .find(|&&(_, hira)| hira.starts_with(ch))
-                    .map(|&(p, _)| p);
-                match punct {
-                    Some(p) => out.push(p),
-                    None => out.push(ch),
-                }
-            }
+            None => out.push(punct_to_ascii(ch).unwrap_or(ch)),
         }
         i += 1;
     }
     out
+}
+
+/// 和文句読点 (。、・「」ー！？〜) を打鍵した ASCII 記号に戻す
+pub fn punct_to_ascii(ch: char) -> Option<char> {
+    PUNCTUATION_TABLE
+        .iter()
+        .find(|&&(_, hira)| hira.starts_with(ch))
+        .map(|&(p, _)| p)
 }
 
 /// 位置 i から始まるかな1単位 (拗音優先) の綴り

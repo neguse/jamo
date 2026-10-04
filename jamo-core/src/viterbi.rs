@@ -334,6 +334,36 @@ fn push_number_variants(candidates: &mut Vec<String>, yomi: &str) {
     }
 }
 
+/// 記号だけの単語の全角/半角を反転した候補を足す。文節全体が記号なら 2 位、
+/// 語に付いた記号 (何？ → 何?) なら末尾 (句点付きの文節で毎回上位を占めないように)
+fn push_symbol_width_variant(
+    candidates: &mut Vec<String>,
+    indices: &[usize],
+    segments: &[Segment],
+) {
+    let flipped: Vec<Option<String>> = indices
+        .iter()
+        .map(|&i| crate::kana::flip_symbol_width(&segments[i].surface))
+        .collect();
+    if flipped.iter().all(Option::is_none) {
+        return;
+    }
+    let variant: String = indices
+        .iter()
+        .zip(&flipped)
+        .map(|(&i, f)| f.as_deref().unwrap_or(&segments[i].surface))
+        .collect();
+    if candidates.contains(&variant) {
+        return;
+    }
+    let at = if flipped.iter().all(Option::is_some) {
+        1
+    } else {
+        candidates.len()
+    };
+    candidates.insert(at.min(candidates.len()), variant);
+}
+
 /// 単語セグメントを文節にグルーピングする
 /// 自立語 (POS_CONTENT) が来たら新しい文節を開始
 /// 付属語 (POS_FUNCTION) は直前の文節に付く
@@ -392,6 +422,7 @@ pub fn group_clauses(segments: &[Segment]) -> Vec<Clause> {
                 }
             }
             push_number_variants(&mut candidates, &yomi);
+            push_symbol_width_variant(&mut candidates, indices, segments);
             push_kana_fallbacks(&mut candidates, &yomi);
 
             Clause {
