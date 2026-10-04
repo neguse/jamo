@@ -13,14 +13,13 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 # jamo-core は cargo でビルドした staticlib をリンクする
 set(JAMO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(JAMO_CORE_LIB "${JAMO_ROOT}/target/release/libjamo_core.a")
-add_custom_command(
-    OUTPUT "${JAMO_CORE_LIB}"
+# Rust ソースの変更は CMake から見えないので毎回 cargo に任せる (差分がなければすぐ終わる)
+add_custom_target(jamo-core-build
     COMMAND cargo build --release -p jamo-core
     WORKING_DIRECTORY "${JAMO_ROOT}"
-    DEPENDS "${JAMO_ROOT}/jamo-core/Cargo.toml"
+    BYPRODUCTS "${JAMO_CORE_LIB}"
     COMMENT "cargo build jamo-core"
     USES_TERMINAL)
-add_custom_target(jamo-core-build DEPENDS "${JAMO_CORE_LIB}")
 add_library(jamo_core STATIC IMPORTED)
 set_target_properties(jamo_core PROPERTIES
     IMPORTED_LOCATION "${JAMO_CORE_LIB}"

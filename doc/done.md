@@ -587,3 +587,12 @@
 - よかったこと: 単語 (セグメント) 単位で記号だけかを見るので、「ラーメン」の ー のような語中の記号は触らずに済む
 - 判断: mozc の symbol.tsv を取り込む案は却下。symbol.tsv は「？」の読みに ? を持たず (？ ？？ ？！ ！？ のみ)、本家の半角候補は variants_rewriter.cc の後処理で出ている。語に付いた記号 (何。) の反転候補を 2 位にすると句点付き文節で毎回上位を占めるので末尾に置く
 - 残課題: 記号の仲間の候補 (「→『【、やじるし→→) は symbol.tsv の取り込みが要る。英数字の全角/半角は数字 (number.rs) と文字種変換 (F9/F10) のみ
+
+### fcitx5 ビルドが jamo-core の変更を拾わない問題の修正 ✓ (2026-10-05)
+- やったこと:
+    - libjamo_core.a の生成規則が Cargo.toml にしか依存しておらず、Rust ソースを変えても cargo が呼ばれず古い staticlib がリンクされていた (E2E も古いコードで通っていた)
+    - add_custom_command (OUTPUT/DEPENDS) をやめ、毎回 cargo を呼ぶ add_custom_target + BYPRODUCTS にした
+- 変更したファイル: jamo-fcitx5/CMakeLists.txt, doc/done.md
+- よかったこと: cargo 自身が差分判定するので、変更なしのビルドは cargo 0.04 秒で再リンクも起きない
+- 判断: jamo-core/src を CMake の DEPENDS に glob で並べる案は却下 (Cargo の依存グラフを CMake に二重管理することになり、ファイル追加で漏れる)
+- 残課題: なし
