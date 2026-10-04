@@ -40,6 +40,26 @@ pub fn to_wide(s: &str) -> String {
         .collect()
 }
 
+/// 記号だけの文字列の全角/半角を反転する (和文句読点は打鍵した ASCII 記号に戻す)。
+/// 記号以外を含む・空なら None
+pub fn flip_symbol_width(s: &str) -> Option<String> {
+    if s.is_empty() {
+        return None;
+    }
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_punctuation() {
+                return Some(to_wide(&c.to_string()));
+            }
+            let narrow = char::from_u32((c as u32).wrapping_sub(0xFF01 - 0x21));
+            match narrow {
+                Some(n) if n.is_ascii_punctuation() => Some(n.to_string()),
+                _ => crate::romaji::punct_to_ascii(c).map(String::from),
+            }
+        })
+        .collect()
+}
+
 /// 先頭だけ大文字、残りは小文字 (ASCII のみ)
 pub fn capitalize(s: &str) -> String {
     let mut chars = s.chars();
@@ -65,6 +85,22 @@ mod tests {
     fn test_wide() {
         assert_eq!(to_wide("Rust 1.0!"), "Ｒｕｓｔ　１．０！");
         assert_eq!(to_wide("あ"), "あ");
+    }
+
+    #[test]
+    fn test_flip_symbol_width() {
+        assert_eq!(flip_symbol_width("？").as_deref(), Some("?"));
+        assert_eq!(flip_symbol_width("！？").as_deref(), Some("!?"));
+        assert_eq!(flip_symbol_width("(").as_deref(), Some("（"));
+        assert_eq!(flip_symbol_width("（").as_deref(), Some("("));
+        // 和文句読点は ASCII の打鍵記号へ
+        assert_eq!(flip_symbol_width("。").as_deref(), Some("."));
+        assert_eq!(flip_symbol_width("「」").as_deref(), Some("[]"));
+        assert_eq!(flip_symbol_width("〜").as_deref(), Some("~"));
+        // 記号以外を含むものは対象外
+        assert_eq!(flip_symbol_width("何？"), None);
+        assert_eq!(flip_symbol_width("1"), None);
+        assert_eq!(flip_symbol_width(""), None);
     }
 
     #[test]

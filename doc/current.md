@@ -18,7 +18,7 @@
 | 9 | ほぼ完了 | 省メモリ辞書 (ゼロコピー v3): T140-T149 完了。.dict 83.5→19.3MB、peak RSS 152.6→17.9MB (ext4) / 9.5MB (tmpfs)。残: T150 cgroup 検証、T151 bit 符号化 |
 | 10 | 完了 | 入力体験 (キー一打の手触り): T160-T165 完了。lite-dm2x の host ハーネス (`just test-ime`) と DM250 実機 (2026-08-25、keyin 注入 + screenshot) で検証済み |
 | 11 | 完了 | Linux IME (fcitx5): T170 アドオン + E2E (CI は Arch コンテナ)、T171 Omarchy 実機導入 |
-| 12 | 完了 | 本家 mozc との比較: T180 bench-engines.py (IPC で mozc_server を駆動)、T181 文節境界ペナルティ (boundary.def) |
+| 12 | 完了 | 本家 mozc との比較: T180 bench-engines.py (IPC で mozc_server を駆動)、T181 文節境界ペナルティ (boundary.def)、T182 記号の全角/半角候補 |
 
 ## ゴール (2026-10-01): mozc より省メモリ・高速で、精度は同等以上
 
