@@ -1,11 +1,15 @@
+// tests の DEF は mozc (https://github.com/google/mozc) の src/data/rules/boundary.def の抜粋で、
+// 規則の書式は同 src/converter/gen_boundary_data.py に従う。上流は BSD-3-Clause (Copyright 2010-2021, Google Inc.)。
+// 著作権表示・条件・免責の全文は THIRD_PARTY_NOTICES にある。
+
 //! 文節境界ペナルティ (mozc の boundary.def)
 //!
 //! 変換キーの先頭に来るノードには品詞 (left_id) ごとの PREFIX ペナルティ、
 //! 末尾に来るノードには right_id ごとの SUFFIX ペナルティを単語コストに足す。
 //! 「いく」単独で非自立動詞 (〜ていく) が勝つ、「かく」で接頭詞「各」が勝つ、
 //! といった単文節の誤変換を、辞書コストと接続行列を変えずに抑える。
-//! 本家 mozc の converter/segmenter.cc (GetPrefixPenalty / GetSuffixPenalty) と
-//! converter/gen_boundary_data.py の移植。
+//! 規則の書式と適用の仕方は本家 mozc の converter/gen_boundary_data.py (生成) と
+//! converter/segmenter.cc (GetPrefixPenalty / GetSuffixPenalty) に合わせた独立実装。
 //!
 //! boundary.def の 1 行は `PREFIX|SUFFIX <品詞パターン> <コスト>`。パターンは id.def の
 //! 素性 (カンマ区切り) に先頭からマッチし、`*` は 1 フィールド (カンマ以外 1 文字以上)、

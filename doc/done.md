@@ -596,3 +596,25 @@
 - よかったこと: cargo 自身が差分判定するので、変更なしのビルドは cargo 0.04 秒で再リンクも起きない
 - 判断: jamo-core/src を CMake の DEPENDS に glob で並べる案は却下 (Cargo の依存グラフを CMake に二重管理することになり、ファイル追加で漏れる)
 - 残課題: なし
+
+### mozc 由来部分のライセンス通知と README の Windows / HTTP 手順の修正 ✓ (2026-10-20)
+- やったこと:
+    - boundary.rs の規則パース・マッチは mozc の segmenter.cc / gen_boundary_data.py の移植で、テストの DEF は boundary.def の抜粋 (12 規則とも上流と一致) なのに、上流の Google 著作権表示・BSD 条件・免責文が無かった。対象と出典を明記して上流の通知をファイル先頭に置いた
+    - README の Windows IME 手順は DLL と辞書を置くだけで、現実装 (DLL は IPC プロキシ) では変換が動かなかった。`jamo-cli serve --ime` の起動手順を足し、DLL に無い辞書探索順の説明を消した
+    - README の HTTP API 表にローカル (`jamo serve`) と Worker の対応列を足した。学習・ユーザー辞書・WebSocket は Worker だけ
+    - romaji/table.rs の 221 件中 220 件が mozc の romanji-hiragana.tsv と一致し、z 記号など mozc 固有の割り当ても含むので、同じく上流の通知を付けた (tsv に個別表示が無いため mozc の LICENSE の表示を使う)
+    - README のライセンス節に THIRD_PARTY_NOTICES を、mozc 辞書の Top-1 を bench.md の実測値に、cbindgen の出力先を実際のヘッダの場所に直した
+- 変更したファイル: jamo-core/src/boundary.rs, jamo-core/src/romaji/table.rs, THIRD_PARTY_NOTICES (新規), jamo-core/Cargo.toml, README.md, doc/done.md, doc/current.md
+- よかったこと: 上流ファイルを取得して規則を 1 行ずつ照合すると、抜粋か独自かを推測でなく判定できる
+- 判断: 通知は移植部分のあるファイル先頭 (ソース再配布の条件) と THIRD_PARTY_NOTICES (バイナリ再配布で同梱する資料) の両方に置く。LICENSE に追記せず別ファイルにしたのは、LICENSE を MIT 単独のまま保つため。jamo-core の license は BSD-3 のコードを含むので `MIT AND BSD-3-Clause`
+- 残課題: バイナリ配布物に THIRD_PARTY_NOTICES を同梱する仕組み (配布物はまだ無い)。crates.io 公開時は crate に LICENSE / THIRD_PARTY_NOTICES が入らない (cargo package はクレートディレクトリ配下のみ) ので対処が要る
+
+### mozc 由来部分の通知を実態に合わせ、全文を THIRD_PARTY_NOTICES に一本化 ✓ (2026-10-20)
+- やったこと:
+    - 上流の gen_boundary_data.py / segmenter.cc / romanji-hiragana.tsv を取得して照合し、boundary.rs の「移植」は実態「書式に合わせた独立実装 + テスト DEF 12 行の逐語抜粋」、table.rs は 220/221 一致 (大半は一般的な対応、z 記号などが mozc 固有) と判定。ヘッダと THIRD_PARTY_NOTICES の対象記述をその通りに直した
+    - 両ファイル先頭の BSD 全文 (33 行 x2) を出典 3 行 + THIRD_PARTY_NOTICES 参照に置き換え、全文は THIRD_PARTY_NOTICES の 1 か所だけにした
+    - THIRD_PARTY_NOTICES の冒頭が「バイナリ再配布時はこれを同梱すれば足りる」と読めるのに辞書 (IPAdic / mozc 辞書 / 沖縄辞書) を含まなかった。辞書は配布物に含めず取得スクリプトを配ること、辞書のライセンスは取得される README.txt にあり対象外であることを明記した
+- 変更したファイル: THIRD_PARTY_NOTICES, jamo-core/src/boundary.rs, jamo-core/src/romaji/table.rs, README.md, doc/done.md, doc/current.md
+- よかったこと: 「移植」のような由来の表明は、上流コードを読んで何が逐語で何が独立実装かを分けてから書くと、ヘッダ (法的表明) が実態と一致する
+- 判断: BSD-3 の条件は「再配布物に表示を保持」でファイルごとではないので、全文は 1 か所で足りる。jamo-core の license は逐語の BSD 由来部分 (テスト DEF、mozc 固有のテーブル項目) が残るので `MIT AND BSD-3-Clause` を維持。クリーンルーム化 (テスト DEF を自作、テーブルを出典 1 行に) は、辞書を使うバイナリに IPAdic/mozc の表示がどうせ要るので負担が減らず却下
+- 残課題: バイナリ配布物に THIRD_PARTY_NOTICES と辞書取得手順を入れる仕組み (配布物はまだ無い)。crates.io 公開時に crate へ LICENSE / THIRD_PARTY_NOTICES が入らない件

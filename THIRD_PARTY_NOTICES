@@ -1,0 +1,53 @@
+Jamo は MIT License (LICENSE) で配布する。
+ただし以下の部分は第三者のコードやデータに由来し、そのライセンスに従う。
+ソース・バイナリのどちらを再配布するときも、このファイルを同梱すること。
+
+辞書データ (data/) は配布物に含めず、利用者が scripts/fetch-mozc.sh / scripts/fetch-ipadic.sh で取得する。
+辞書データとそれから作った辞書バイナリのライセンス (IPAdic、mozc 辞書、沖縄辞書) は
+取得される data/mozc/README.txt と mozc の LICENSE にあり、このファイルの対象外。
+辞書バイナリを配布する場合は、配布する側がそれらの表示を同梱する。
+
+================================================================
+mozc (https://github.com/google/mozc)
+ライセンス: BSD-3-Clause
+
+対象:
+- jamo-core/src/boundary.rs
+  - tests の DEF: src/data/rules/boundary.def の抜粋 (12 規則、逐語)
+  - 規則のパースとマッチ (Rule / BoundaryRules): src/converter/gen_boundary_data.py の書式と
+    適用順 (PREFIX/SUFFIX、`*` は 1 フィールド、末尾カンマ、最初に合った規則) に合わせた独立実装
+  - 上流ファイルの表示: Copyright 2010-2021, Google Inc.
+- jamo-core/src/romaji/table.rs
+  - ローマ字→ひらがな対応表 (ROMAJI_TABLE): src/data/preedit/romanji-hiragana.tsv に由来
+    (221 件中 220 件が一致。大半は一般的なローマ字入力の対応だが、z 記号など mozc 固有の割り当てを含む)
+  - 上流ファイルに個別の表示は無く、mozc の LICENSE の表示 (Copyright 2010-2018, Google Inc.) が適用される
+
+Copyright 2010-2021, Google Inc.
+Copyright 2010-2018, Google Inc.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+    * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+    * Neither the name of Google Inc. nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
