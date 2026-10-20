@@ -602,7 +602,7 @@
     - boundary.rs の規則パース・マッチは mozc の segmenter.cc / gen_boundary_data.py の移植で、テストの DEF は boundary.def の抜粋 (12 規則とも上流と一致) なのに、上流の Google 著作権表示・BSD 条件・免責文が無かった。対象と出典を明記して上流の通知をファイル先頭に置いた
     - README の Windows IME 手順は DLL と辞書を置くだけで、現実装 (DLL は IPC プロキシ) では変換が動かなかった。`jamo-cli serve --ime` の起動手順を足し、DLL に無い辞書探索順の説明を消した
     - README の HTTP API 表にローカル (`jamo serve`) と Worker の対応列を足した。学習・ユーザー辞書・WebSocket は Worker だけ
-- 変更したファイル: jamo-core/src/boundary.rs, README.md, doc/done.md, doc/current.md
+- 変更したファイル: jamo-core/src/boundary.rs, THIRD_PARTY_NOTICES (新規), jamo-core/Cargo.toml, README.md, doc/done.md, doc/current.md
 - よかったこと: 上流ファイルを取得して規則を 1 行ずつ照合すると、抜粋か独自かを推測でなく判定できる
-- 判断: 通知は移植部分のあるファイルに置き、リポジトリ全体の MIT (LICENSE) は変えない
-- 残課題: バイナリ配布時は BSD 条件により同じ通知をドキュメント等に同梱する必要がある (配布物はまだ無い)。romaji/table.rs は 221 件中 220 件が mozc の romanji-hiragana.tsv と一致するが、通知の要否は未判断
+- 判断: 通知は移植部分のあるファイル先頭 (ソース再配布の条件) と THIRD_PARTY_NOTICES (バイナリ再配布で同梱する資料) の両方に置く。LICENSE に追記せず別ファイルにしたのは、LICENSE を MIT 単独のまま保つため。jamo-core の license は BSD-3 のコードを含むので `MIT AND BSD-3-Clause`
+- 残課題: バイナリ配布物に THIRD_PARTY_NOTICES を同梱する仕組み (配布物はまだ無い)。romaji/table.rs は 221 件中 220 件が mozc の romanji-hiragana.tsv と一致するが、通知の要否は未判断
