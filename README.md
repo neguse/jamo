@@ -292,4 +292,4 @@ jamo/
 ## ライセンス
 
 MIT ([LICENSE](LICENSE))。
-mozc から移植・由来する一部のファイルは BSD-3-Clause で、対象と通知は [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES) にある。バイナリを再配布するときは THIRD_PARTY_NOTICES を同梱すること。
+mozc に由来する一部 (boundary.rs のテスト規則、ローマ字対応表) は BSD-3-Clause で、対象と通知の全文は [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES) にある。ソース・バイナリを再配布するときは THIRD_PARTY_NOTICES を同梱すること。辞書データは配布物に含めず、そのライセンスは「辞書」節を参照。
