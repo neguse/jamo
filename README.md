@@ -66,18 +66,20 @@ cargo run -- dict merge --base data/ipadic --extra extra1.csv --extra extra2/ -o
 
 ## HTTP API
 
-| エンドポイント | メソッド | 説明 |
-|---------------|---------|------|
-| `/health` | GET | ヘルスチェック |
-| `/convert?q=...` | GET | かな漢字変換 |
-| `/resize?q=...&boundaries=...&clause=...&delta=...` | GET | 文節伸縮 |
-| `/predict?q=...` | GET | 予測変換 |
-| `/commit` | POST | 変換確定 (学習) |
-| `/dict/add` | POST | ユーザー辞書に単語追加 |
-| `/dict/remove` | POST | ユーザー辞書から単語削除 |
-| `/dict/list` | GET | ユーザー辞書一覧 |
-| `/dict/import` | POST | ユーザー辞書一括インポート |
-| `/ws` | GET | WebSocket 接続 |
+| エンドポイント | メソッド | 説明 | ローカル (`jamo serve`) | Cloudflare Worker |
+|---------------|---------|------|:---:|:---:|
+| `/health` | GET | ヘルスチェック | ✓ | ✓ |
+| `/convert?q=...` | GET | かな漢字変換 | ✓ | ✓ |
+| `/resize?q=...&boundaries=...&clause=...&delta=...` | GET | 文節伸縮 | ✓ | ✓ |
+| `/predict?q=...` | GET | 予測変換 | ✓ | ✓ |
+| `/commit` | POST | 変換確定 (学習) | — | ✓ |
+| `/dict/add` | POST | ユーザー辞書に単語追加 | — | ✓ |
+| `/dict/remove` | POST | ユーザー辞書から単語削除 | — | ✓ |
+| `/dict/list` | GET | ユーザー辞書一覧 | — | ✓ |
+| `/dict/import` | POST | ユーザー辞書一括インポート | — | ✓ |
+| `/ws` | GET | WebSocket 接続 | — | ✓ |
+
+学習・ユーザー辞書・WebSocket は Worker (Durable Object がユーザーごとに状態を持つ) だけが提供する。
 
 詳細は [doc/api.yaml](doc/api.yaml) (OpenAPI 3.0.3) を参照。
 
@@ -145,41 +147,43 @@ wrangler r2 object put jamo-dicts/ipadic.dict --file ../data/ipadic.dict
 ## Windows IME
 
 Windows 用の TSF (Text Services Framework) IME として動作する DLL。ローマ字入力→ひらがな→漢字変換を提供。
+DLL は辞書を持たず、Named Pipe (`\\.\pipe\jamo-ime`) 経由で IME IPC サーバー (`jamo-cli serve --ime`) に変換を任せる。
+サーバーが起動していないと変換できない (サーバーは自動起動しない)。
 
 ### ビルド
 
 ```bash
-cargo build --release -p jamo-ime
+cargo build --release -p jamo-ime -p jamo-cli
 ```
 
-成果物: `target/release/jamo_ime.dll`
+成果物: `target/release/jamo_ime.dll` (IME) と `target/release/jamo-cli.exe` (IPC サーバー)
 
 ### インストール
 
 1. 辞書バイナリを構築 (未作成の場合):
 
 ```bash
-cargo run -- dict build -o data/ipadic.dict
+cargo run -p jamo-cli --release -- dict build -o data/ipadic.dict
 ```
 
-2. 管理者権限の PowerShell を開き、DLL と辞書を配置して登録:
+2. 管理者権限の PowerShell を開き、DLL を配置して登録:
 
 ```powershell
 mkdir "C:\Program Files\Jamo"
 copy target\release\jamo_ime.dll "C:\Program Files\Jamo\"
-copy data\ipadic.dict "C:\Program Files\Jamo\"
 regsvr32 "C:\Program Files\Jamo\jamo_ime.dll"
+```
+
+3. IME IPC サーバーを起動する。IME を使う間は起動したままにする:
+
+```powershell
+target\release\jamo-cli.exe serve --ime --dict data\ipadic.dict
 ```
 
 4. Windows の設定 → 時刻と言語 → 言語 → 日本語 → キーボード で「Jamo」を選択。
 
-### 辞書の配置場所
-
-以下の順序で辞書ファイル `ipadic.dict` を検索する:
-
-1. レジストリ `HKCU\Software\Jamo\DictPath` に指定されたパス
-2. DLL と同じディレクトリ
-3. `%APPDATA%\Jamo\ipadic.dict`
+`--dict` を省くと、カレントディレクトリからの相対パス `data/mozc.dict` → `data/ipadic.dict` の順に辞書を探す。
+DLL は未接続なら要求のたびに接続を試みるので、サーバーは IME を選んだ後に起動してもよい。
 
 ### アンインストール
 
