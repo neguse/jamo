@@ -10,8 +10,13 @@ mozc (https://github.com/google/mozc)
 - jamo-core/src/boundary.rs
   - 規則のパースとマッチ: src/converter/segmenter.cc と src/converter/gen_boundary_data.py の移植
   - テストの規則 (DEF): src/data/rules/boundary.def の抜粋
+  - 上流ファイルの表示: Copyright 2010-2021, Google Inc.
+- jamo-core/src/romaji/table.rs
+  - ローマ字→ひらがな対応表: src/data/preedit/romanji-hiragana.tsv に由来
+  - 上流ファイルに個別の表示は無く、mozc の LICENSE の表示 (Copyright 2010-2018, Google Inc.) が適用される
 
 Copyright 2010-2021, Google Inc.
+Copyright 2010-2018, Google Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without

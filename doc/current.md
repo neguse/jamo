@@ -188,7 +188,7 @@ jamo/
 ## repo 公開
 
 準備完了 (2026-08-19)。秘匿情報は git 全履歴スキャンでクリーン確認済み。
-mozc から移植した boundary.rs に上流 (Google, BSD-3-Clause) の通知を追加済み (2026-10-20)。
+mozc 由来の boundary.rs / romaji/table.rs に上流 (Google, BSD-3-Clause) の通知を付け、THIRD_PARTY_NOTICES にまとめた (2026-10-20)。
 外部 contribution は受け付けない方針 (CONTRIBUTING.md は作らず GitHub 設定で制限)。
 残手順 (ユーザー実行):
 

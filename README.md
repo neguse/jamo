@@ -95,7 +95,7 @@ wasm-pack build --target web --features wasm
 ## 辞書 (mozc dictionary_oss 推奨)
 
 ```bash
-# mozc 辞書データを取得してバイナリ構築 (Top-1 89.3% / Top-5 98.2%)
+# mozc 辞書データを取得してバイナリ構築 (Top-1 96.4% / Top-5 98.2%)
 scripts/fetch-mozc.sh
 cargo run -p jamo-cli --release -- dict build --dict data/mozc -o data/mozc.dict
 ```
@@ -112,7 +112,7 @@ license (詳細は取得される `data/mozc/README.txt`)。辞書バイナリ�
 cargo build --release -p jamo-core
 
 # ヘッダ生成
-cbindgen --config jamo-core/cbindgen.toml -o include/jamo.h jamo-core
+cbindgen --config jamo-core/cbindgen.toml -o jamo-core/include/jamo.h jamo-core
 
 # 使用例 (v2: セッション型。返却文字列は次の呼び出しまで有効、解放不要)
 # jamo_engine_t* engine = jamo_engine_open("data/ipadic.dict");
@@ -291,4 +291,5 @@ jamo/
 
 ## ライセンス
 
-MIT
+MIT ([LICENSE](LICENSE))。
+mozc から移植・由来する一部のファイルは BSD-3-Clause で、対象と通知は [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES) にある。バイナリを再配布するときは THIRD_PARTY_NOTICES を同梱すること。
