@@ -53,7 +53,7 @@ Hyprland / sway は text-input のカーソル矩形の更新で popup を置き
 
 | タスク | 備考 |
 |--------|------|
-| T070 ローマ字エンジン | romaji.rs, 35テスト, ~200パターン |
+| T070 ローマ字エンジン | romaji.rs, ~300パターン |
 | T071 jamo-ime crate 骨格 | cdylib, DllMain + 4 COM exports |
 | T072 COM/TSF 登録 | registry.rs (CLSID, Profile, Category) |
 | T073 IClassFactory | class_factory.rs |
