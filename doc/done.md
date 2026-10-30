@@ -626,7 +626,8 @@
     - www を英字のまま出すようにした (っっw になっていた)。ww + 他の文字は従来どおり促音
     - q が黙って消えていたのは q で始まる綴りが無かったため。追加で解消した
     - feed を表駆動に置き換え、重ね打ち判定と特例分岐を消した
-- 変更したファイル: jamo-core/src/romaji.rs, jamo-core/src/romaji/table.rs, jamo-core/src/romaji/tests.rs, doc/current.md, doc/done.md
+    - THIRD_PARTY_NOTICES と table.rs の由来の記述を、上流の全行を収録した実態に合わせた
+- 変更したファイル: jamo-core/src/romaji.rs, jamo-core/src/romaji/table.rs, jamo-core/src/romaji/tests.rs, THIRD_PARTY_NOTICES, doc/current.md, doc/done.md
 - よかったこと: 一致率は片方向では不足を見逃す。上流との比較は両方向で取る
 - 判断: feed の特例の連鎖 (nn、n'、重ね打ち、m + b/p、記号) をやめ、mozc と同じ「綴り・かな・持ち越し」の表駆動にした。特例を足すたびに順序依存が増えるのに対し、表なら行を足すだけで済む。追加の綴りは逆変換の優先綴り (か → ka) を変えないようテーブル末尾に置く。nn → ん は mozc の表と同じなので変えない
 - 残課題: 英字モードは確定するまで抜けられず、全部消しても解除されない (常用では使っていないので今回は対象外)

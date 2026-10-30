@@ -1,5 +1,5 @@
-// ROMAJI_TABLE は mozc (https://github.com/google/mozc) の src/data/preedit/romanji-hiragana.tsv に由来し、
-// z 記号など mozc 固有の割り当てを含む。上流は BSD-3-Clause (Copyright 2010-2018, Google Inc.)。
+// このファイルの表は mozc (https://github.com/google/mozc) の src/data/preedit/romanji-hiragana.tsv に由来する。
+// 上流は BSD-3-Clause (Copyright 2010-2018, Google Inc.)。
 // 著作権表示・条件・免責の全文は THIRD_PARTY_NOTICES にある。
 
 //! ローマ字・句読点テーブル
