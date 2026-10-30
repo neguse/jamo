@@ -149,7 +149,7 @@ impl RomajiConverter {
     /// pending を強制確定する。"n" は「ん」、未完成の子音は打った英字のまま返す
     /// (黙って消すと入力が失われる)
     pub fn flush(&mut self) -> String {
-        if self.pending == "n" {
+        if matches!(self.pending.as_str(), "n" | "nn") {
             self.pending.clear();
             "ん".to_string()
         } else {
@@ -189,8 +189,8 @@ fn romaji_for_kana(kana: &str) -> Option<&'static str> {
 }
 
 /// ひらがな列を打鍵ローマ字に戻す (半角英字への変換用)。
-/// 拗音は 2 文字単位で先に引き、っ は次の子音の重ね打ち、ん は次が母音/y/n なら
-/// nn、それ以外は n。テーブルにない文字 (英数字・漢字など) はそのまま残す。
+/// 拗音は 2 文字単位で先に引き、っ は次の子音の重ね打ち、ん は次が母音/y なら
+/// n'、ん なら nn、それ以外は n。テーブルにない文字 (英数字・漢字など) はそのまま残す。
 pub fn kana_to_romaji(kana: &str) -> String {
     let chars: Vec<char> = kana.chars().collect();
     let mut out = String::new();
@@ -212,10 +212,14 @@ pub fn kana_to_romaji(kana: &str) -> String {
             continue;
         }
         if ch == 'ん' {
-            let doubled = unit_romaji(&chars, i + 1)
-                .and_then(|s| s.chars().next())
-                .is_some_and(|c| is_vowel(c) || matches!(c, 'y' | 'n'));
-            out.push_str(if doubled { "nn" } else { "n" });
+            let next = unit_romaji(&chars, i + 1).and_then(|s| s.chars().next());
+            out.push_str(if chars.get(i + 1) == Some(&'ん') {
+                "nn"
+            } else if next.is_some_and(|c| is_vowel(c) || c == 'y') {
+                "n'"
+            } else {
+                "n"
+            });
             i += 1;
             continue;
         }
