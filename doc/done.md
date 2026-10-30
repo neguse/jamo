@@ -619,6 +619,13 @@
 - 判断: BSD-3 の条件は「再配布物に表示を保持」でファイルごとではないので、全文は 1 か所で足りる。jamo-core の license は逐語の BSD 由来部分 (テスト DEF、mozc 固有のテーブル項目) が残るので `MIT AND BSD-3-Clause` を維持。クリーンルーム化 (テスト DEF を自作、テーブルを出典 1 行に) は、辞書を使うバイナリに IPAdic/mozc の表示がどうせ要るので負担が減らず却下
 - 残課題: バイナリ配布物に THIRD_PARTY_NOTICES と辞書取得手順を入れる仕組み (配布物はまだ無い)。crates.io 公開時に crate へ LICENSE / THIRD_PARTY_NOTICES が入らない件
 
+### ファイル・関数の行数上限を廃止 ✓ (2026-10-31)
+- やったこと: CLAUDE.md の構造メトリクス節と pre-commit のファイル行数チェックを消した
+- 変更したファイル: CLAUDE.md, .githooks/pre-commit, doc/done.md
+- よかったこと: 関数行数は CLAUDE.md に書かれているだけで、どこにも検査が無かった
+- 判断: 行数は読みやすさの代理指標でしかなく、上限に合わせた切り出しを誘発するので廃止する。分割するかは中身で決める
+- 残課題: なし
+
 ### ローマ字表の不足を mozc の表に合わせる ✓ (2026-10-31)
 - やったこと:
     - mozc の romanji-hiragana.tsv と逆向きに比べ、jamo に無い綴り (ca 行、cy 行、q 行、kw/gw/sw/zw/tw/dw/hw/wh 行、vy 行、xn、wu、t'i / d'i 系など) を追加した。打つと英字が残り、消さないと正しいかなを出せなかった
