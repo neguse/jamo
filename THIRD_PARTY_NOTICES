@@ -18,8 +18,8 @@ mozc (https://github.com/google/mozc)
     適用順 (PREFIX/SUFFIX、`*` は 1 フィールド、末尾カンマ、最初に合った規則) に合わせた独立実装
   - 上流ファイルの表示: Copyright 2010-2021, Google Inc.
 - jamo-core/src/romaji/table.rs
-  - ローマ字→ひらがな対応表 (ROMAJI_TABLE): src/data/preedit/romanji-hiragana.tsv に由来
-    (221 件中 220 件が一致。大半は一般的なローマ字入力の対応だが、z 記号など mozc 固有の割り当てを含む)
+  - ローマ字→ひらがな対応表 (ROMAJI_TABLE / CARRY_TABLE / PUNCTUATION_TABLE): src/data/preedit/romanji-hiragana.tsv に由来
+    (上流の全行を収録。jamo 独自の行は yi、mb、mp と句読点の一部)
   - 上流ファイルに個別の表示は無く、mozc の LICENSE の表示 (Copyright 2010-2018, Google Inc.) が適用される
 
 Copyright 2010-2021, Google Inc.
