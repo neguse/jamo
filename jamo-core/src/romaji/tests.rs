@@ -346,7 +346,7 @@ fn test_kana_to_romaji_keeps_other_chars() {
 fn test_unmatched_pending_is_kept_as_letters() {
     assert_eq!(convert_all("rust"), "るst");
     assert_eq!(convert_all("ksa"), "kさ");
-    assert_eq!(convert_all("hello"), "へlぉ");
+    assert_eq!(convert_all("hello"), "へっぉ");
 }
 
 // ---- z 記号 (mozc 準拠) ----
@@ -367,4 +367,76 @@ fn test_z_symbols() {
     assert_eq!(convert_all("za"), "ざ");
     assert_eq!(convert_all("zyo"), "じょ");
     assert_eq!(convert_all("mazi"), "まじ");
+}
+
+/// mozc の romanji-hiragana.tsv にある綴りは英字を残さず打てる
+#[test]
+fn test_mozc_spellings() {
+    let cases = [
+        ("cacicuceco", "かしくせこ"),
+        ("cyacyicyucyecyo", "ちゃちぃちゅちぇちょ"),
+        ("qaqiquqeqo", "くぁくぃくくぇくぉ"),
+        ("kwakwikwukwekwo", "くぁくぃくぅくぇくぉ"),
+        ("gwagwigwugwegwo", "ぐぁぐぃぐぅぐぇぐぉ"),
+        ("swaswiswusweswo", "すぁすぃすぅすぇすぉ"),
+        ("zwazwizwuzwezwo", "ずぁずぃずぅずぇずぉ"),
+        ("twatwitwutwetwo", "とぁとぃとぅとぇとぉ"),
+        ("dwadwidwudwedwo", "どぁどぃどぅどぇどぉ"),
+        ("hwahwihwehwohwyu", "ふぁふぃふぇふぉふゅ"),
+        ("whawhiwhuwhewho", "うぁうぃううぇうぉ"),
+        ("wu", "う"),
+        ("vyavyivyuvyevyo", "ゔゃゔぃゔゅゔぇゔょ"),
+        ("xyixyelyilye", "ぃぇぃぇ"),
+        ("xn", "ん"),
+        ("d'id'ud'yu", "でぃどぅでゅ"),
+        ("t'it'ut'yu", "てぃとぅてゅ"),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(convert_all(input), expected, "input: {input}");
+    }
+}
+
+#[test]
+fn test_sokuon_all_consonants() {
+    assert_eq!(convert_all("qqa"), "っくぁ");
+    assert_eq!(convert_all("yya"), "っや");
+    assert_eq!(convert_all("xxa"), "っぁ");
+    assert_eq!(convert_all("lla"), "っぁ");
+    assert_eq!(convert_all("matcha"), "まっちゃ");
+}
+
+#[test]
+fn test_n_before_q() {
+    assert_eq!(convert_all("nqa"), "んくぁ");
+}
+
+/// "www" は草の英字として残し、"wwa" は従来どおり促音にする
+#[test]
+fn test_repeated_w() {
+    assert_eq!(convert_all("www"), "www");
+    assert_eq!(convert_all("wwwww"), "wwwww");
+    assert_eq!(convert_all("wwa"), "っわ");
+    assert_eq!(convert_all("wwwa"), "wっわ");
+    assert_eq!(convert_all("ww"), "ww");
+}
+
+/// 綴りの途中で記号が来たら打った英字を残す
+#[test]
+fn test_apostrophe_without_match() {
+    assert_eq!(convert_all("d'a"), "d'あ");
+    assert_eq!(convert_all("t'"), "t'");
+}
+
+/// 追加の綴りが逆変換の優先綴りを奪わない
+#[test]
+fn test_reverse_keeps_preferred_spelling() {
+    assert_eq!(kana_to_romaji("かしくせこ"), "kashikuseko");
+    assert_eq!(kana_to_romaji("ちゃてぃふぁうんぅ"), "chathifaunxu");
+}
+
+/// 新しい綴りのかなも逆変換して元のかなに戻る
+#[test]
+fn test_reverse_round_trip_new_kana() {
+    let kana = "くぁぐぁとぅどぅうぁすぁずぁゔゃっぁ";
+    assert_eq!(convert_all(&kana_to_romaji(kana)), kana);
 }

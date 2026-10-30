@@ -1,13 +1,13 @@
 //! ローマ字→ひらがな変換 FSM
 //!
 //! ASCII キー入力を受け取り、ひらがなを出力する有限状態機械。
-//! 静的ルックアップテーブルで約200のローマ字パターンを網羅。
+//! 静的ルックアップテーブルで約300のローマ字パターンを網羅。
 
 mod table;
 #[cfg(test)]
 mod tests;
 
-use table::{PUNCTUATION_TABLE, ROMAJI_TABLE};
+use table::{CARRY_TABLE, PUNCTUATION_TABLE, ROMAJI_TABLE};
 
 /// 母音かどうか
 fn is_vowel(c: char) -> bool {
@@ -37,50 +37,28 @@ fn is_romaji_consonant(c: char) -> bool {
             | 'v'
             | 'x'
             | 'l'
+            | 'q'
     )
 }
 
-/// 促音を生成する子音の重複パターンかどうか
-fn is_double_consonant(c: char) -> bool {
-    matches!(
-        c,
-        'k' | 's'
-            | 't'
-            | 'h'
-            | 'm'
-            | 'r'
-            | 'w'
-            | 'g'
-            | 'z'
-            | 'd'
-            | 'b'
-            | 'p'
-            | 'c'
-            | 'f'
-            | 'j'
-            | 'v'
-    )
-}
-
-/// テーブルからマッチを探す
-/// 完全一致があれば Some((ひらがな, 消費文字数))、なければ None
-fn lookup_exact(s: &str) -> Option<(&'static str, usize)> {
-    for &(roma, hira) in ROMAJI_TABLE {
-        if s == roma {
-            return Some((hira, roma.len()));
-        }
+/// 綴りに完全一致する行の (かな, 次の入力に持ち越す綴り)
+fn lookup_exact(s: &str) -> Option<(&'static str, &'static str)> {
+    if let Some(&(_, kana)) = ROMAJI_TABLE.iter().find(|&&(roma, _)| roma == s) {
+        return Some((kana, ""));
     }
-    None
+    CARRY_TABLE
+        .iter()
+        .find(|&&(roma, _, _)| roma == s)
+        .map(|&(_, kana, rest)| (kana, rest))
 }
 
-/// テーブルにプレフィックスマッチするパターンがあるか
+/// s を真の接頭辞に持つ綴りがあるか
 fn has_prefix_match(s: &str) -> bool {
-    for &(roma, _) in ROMAJI_TABLE {
-        if roma.starts_with(s) && roma.len() > s.len() {
-            return true;
-        }
-    }
-    false
+    ROMAJI_TABLE
+        .iter()
+        .map(|&(roma, _)| roma)
+        .chain(CARRY_TABLE.iter().map(|&(roma, _, _)| roma))
+        .any(|roma| roma.starts_with(s) && roma.len() > s.len())
 }
 
 /// ローマ字変換結果
@@ -118,98 +96,44 @@ impl RomajiConverter {
 
     /// 1文字入力し、ひらがな確定 or 待機を返す
     pub fn feed(&mut self, ch: char) -> RomajiResult {
-        // "n'" → ん (アポストロフィは ん の区切りとして消費する)
-        if self.pending == "n" && ch == '\'' {
-            self.pending.clear();
-            return RomajiResult::Emit("ん".to_string());
-        }
+        let ch = ch.to_ascii_lowercase();
+        let candidate = format!("{}{}", self.pending, ch);
 
-        // 記号つきのテーブル一致 ("z." → …) は句読点変換より先
-        let ch_lower = ch.to_ascii_lowercase();
-        if !ch_lower.is_ascii_alphabetic() && !self.pending.is_empty() {
-            let candidate = format!("{}{}", self.pending, ch_lower);
-            if let Some((sym, _)) = lookup_exact(&candidate) {
-                self.pending.clear();
-                return RomajiResult::Emit(sym.to_string());
-            }
-        }
-
-        // 句読点・ローマ字でない文字: 未確定分を flush してから続ける
-        if !ch_lower.is_ascii_alphabetic() {
-            let flushed = self.flush();
-            let text = PUNCTUATION_TABLE
-                .iter()
-                .find(|&&(punct, _)| punct == ch)
-                .map(|&(_, hira)| hira.to_string())
-                .unwrap_or_else(|| ch.to_string());
-            return RomajiResult::Emit(format!("{flushed}{text}"));
-        }
-
-        let candidate = format!("{}{}", self.pending, ch_lower);
-
-        // "nn" → "ん" (即座に確定)
-        if self.pending == "n" && ch_lower == 'n' {
-            self.pending.clear();
-            return RomajiResult::Emit("ん".to_string());
-        }
-
-        // "n" の特殊処理: n の後に母音・y 以外の子音が来たら "ん" + 新しい子音
-        if self.pending == "n" && ch_lower != 'y' && !is_vowel(ch_lower) {
-            if is_romaji_consonant(ch_lower) {
-                self.pending = ch_lower.to_string();
-                return RomajiResult::Emit("ん".to_string());
-            }
-            // ローマ字の子音でもない文字
-            self.pending.clear();
-            return RomajiResult::Emit(format!("ん{ch_lower}"));
-        }
-
-        // "m" + b/p → "ん" (shimbun → しんぶん)
-        if self.pending == "m" && matches!(ch_lower, 'b' | 'p') {
-            self.pending = ch_lower.to_string();
-            return RomajiResult::Emit("ん".to_string());
-        }
-
-        // 完全一致チェック
-        if let Some((hira, _)) = lookup_exact(&candidate) {
-            // "n" 単体マッチは特殊: まだ確定しない (na, ni 等の可能性)
-            if candidate == "n" {
-                self.pending = candidate;
-                return RomajiResult::Pending;
-            }
-            self.pending.clear();
-            return RomajiResult::Emit(hira.to_string());
-        }
-
-        // プレフィックスマッチ (まだ長いパターンがありえる)
+        // より長い綴りがありうる間は確定しない ("n" → "na", "ww" → "www")
         if has_prefix_match(&candidate) {
             self.pending = candidate;
             return RomajiResult::Pending;
         }
-
-        // 促音チェック: 同じ子音の連続 (nn は除外: "ん" で処理済み)
-        if candidate.len() == 2
-            && ch_lower != 'n'
-            && is_double_consonant(ch_lower)
-            && self.pending.len() == 1
-            && self.pending.starts_with(ch_lower)
-        {
-            self.pending = ch_lower.to_string();
-            return RomajiResult::Emit("っ".to_string());
+        if let Some((kana, rest)) = lookup_exact(&candidate) {
+            self.pending = rest.to_string();
+            return RomajiResult::Emit(kana.to_string());
+        }
+        if self.pending.is_empty() {
+            let text = PUNCTUATION_TABLE
+                .iter()
+                .find(|&&(punct, _)| punct == ch)
+                .map(|&(_, kana)| kana.to_string())
+                .unwrap_or_else(|| ch.to_string());
+            return RomajiResult::Emit(text);
         }
 
-        // マッチしない → pending を英字のまま出して、新しい文字から再開
-        // (黙って捨てると "st" の s が消える)
-        if !self.pending.is_empty() {
-            let dropped = core::mem::take(&mut self.pending);
-            return match self.feed(ch) {
-                RomajiResult::Emit(s) => RomajiResult::Emit(format!("{dropped}{s}")),
-                RomajiResult::Pending => RomajiResult::Emit(dropped),
-            };
+        // 綴りが続かない: 待っていた分を確定して ch からやり直す
+        let settled = self.settle_pending();
+        match self.feed(ch) {
+            RomajiResult::Emit(s) => RomajiResult::Emit(format!("{settled}{s}")),
+            RomajiResult::Pending => RomajiResult::Emit(settled),
         }
+    }
 
-        // 単独文字でもマッチしない
-        RomajiResult::Pending
+    /// 待っていた綴りを確定する。表に無い綴りは打った英字のまま返す
+    fn settle_pending(&mut self) -> String {
+        match lookup_exact(&self.pending) {
+            Some((kana, rest)) => {
+                self.pending = rest.to_string();
+                kana.to_string()
+            }
+            None => core::mem::take(&mut self.pending),
+        }
     }
 
     /// Backspace 処理
