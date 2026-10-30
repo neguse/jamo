@@ -114,9 +114,18 @@ fn test_sokuon() {
 #[test]
 fn test_nn() {
     assert_eq!(convert_all("nn"), "ん");
-    // MS-IME方式: "nn"は両方のnを消費して"ん"を確定
-    // "nna" = nn(ん) + a(あ)
-    assert_eq!(convert_all("nna"), "んあ");
+    // nn + 母音/y は ん + な行
+    assert_eq!(convert_all("onna"), "おんな");
+    assert_eq!(convert_all("kannin"), "かんにん");
+    assert_eq!(convert_all("shinnyuu"), "しんにゅう");
+    // n を 3 つ打っても同じ
+    assert_eq!(convert_all("onnna"), "おんな");
+    // nn + 子音は ん + 子音
+    assert_eq!(convert_all("sannka"), "さんか");
+    // ん + 母音/y は n' で打つ
+    assert_eq!(convert_all("kan'i"), "かんい");
+    assert_eq!(convert_all("hon'ya"), "ほんや");
+    assert_eq!(convert_all("nnn"), "んん");
 }
 
 #[test]
@@ -140,9 +149,7 @@ fn test_kyou() {
 
 #[test]
 fn test_konnichiha() {
-    // MS-IME方式: nn は両方消費して ん
-    // "konnichiha" = ko(こ) + nn(ん) + i(い) + chi(ち) + ha(は)
-    assert_eq!(convert_all("konnichiha"), "こんいちは");
+    assert_eq!(convert_all("konnichiha"), "こんにちは");
     // こんにちは を打つには konnnichiha (3つのn)
     assert_eq!(convert_all("konnnichiha"), "こんにちは");
 }
@@ -327,8 +334,12 @@ fn test_kana_to_romaji_basic() {
 fn test_kana_to_romaji_sokuon_and_n() {
     assert_eq!(kana_to_romaji("きっと"), "kitto");
     assert_eq!(kana_to_romaji("あっ"), "axtu");
-    assert_eq!(kana_to_romaji("かんい"), "kanni"); // ん + 母音は nn
-    assert_eq!(kana_to_romaji("かんな"), "kannna"); // nn→ん の後に na (この FSM の打鍵通り)
+    assert_eq!(kana_to_romaji("かんい"), "kan'i");
+    assert_eq!(kana_to_romaji("ほんや"), "hon'ya");
+    assert_eq!(kana_to_romaji("かんな"), "kanna");
+    for kana in ["かんい", "ほんや", "かんな", "んん", "んんな", "しんにゅう"] {
+        assert_eq!(convert_all(&kana_to_romaji(kana)), kana);
+    }
     assert_eq!(kana_to_romaji("ほん"), "hon");
     assert_eq!(kana_to_romaji("ほんき"), "honki");
 }
