@@ -57,6 +57,66 @@ fn test_backspace_pending_then_kana() {
 }
 
 #[test]
+fn test_backspace_resumes_settled_romaji() {
+    let mut s = Session::new();
+    feed_str(&mut s, "gk");
+    assert_eq!(s.backspace(), Ok(true));
+    assert_eq!(s.preedit(), "g");
+    s.feed('a').unwrap();
+    assert_eq!(s.preedit(), "が");
+
+    let mut s = Session::new();
+    feed_str(&mut s, "kagka");
+    assert_eq!(s.backspace(), Ok(true)); // か を消すと g が綴りに戻る
+    assert_eq!(s.preedit(), "かg");
+    s.feed('a').unwrap();
+    assert_eq!(s.preedit(), "かが");
+}
+
+#[test]
+fn test_backspace_resumes_longest_spelling() {
+    let mut s = Session::new();
+    feed_str(&mut s, "sht");
+    assert_eq!(s.backspace(), Ok(true));
+    assert_eq!(s.preedit(), "sh");
+    s.feed('a').unwrap();
+    assert_eq!(s.preedit(), "しゃ");
+}
+
+#[test]
+fn test_backspace_can_delete_resumed_romaji() {
+    let mut s = Session::new();
+    feed_str(&mut s, "gka");
+    assert_eq!(s.backspace(), Ok(true));
+    assert_eq!(s.backspace(), Ok(true));
+    assert_eq!(s.preedit(), "");
+    assert_eq!(s.backspace(), Ok(false));
+    s.feed('a').unwrap();
+    assert_eq!(s.preedit(), "あ");
+}
+
+#[test]
+fn test_backspace_resumes_romaji_at_cursor() {
+    let mut s = Session::new();
+    feed_str(&mut s, "gkau");
+    s.move_cursor(-1).unwrap(); // gか|う
+    assert_eq!(s.backspace(), Ok(true));
+    assert_eq!(s.preedit(), "gう");
+    assert_eq!(s.cursor(), 1);
+    s.feed('a').unwrap();
+    assert_eq!(s.preedit(), "がう");
+}
+
+#[test]
+fn test_backspace_keeps_alpha_mode_text_literal() {
+    let mut s = Session::new();
+    feed_str(&mut s, "Rust");
+    assert_eq!(s.backspace(), Ok(true));
+    s.feed('a').unwrap();
+    assert_eq!(s.preedit(), "Rusa");
+}
+
+#[test]
 fn test_convert_moves_to_converting() {
     let (s, _dict) = converting_session("kyouha");
     assert_eq!(s.state(), SessionState::Converting);

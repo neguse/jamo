@@ -215,16 +215,29 @@ impl Session {
     pub fn backspace(&mut self) -> Result<bool, SessionError> {
         self.ensure_input()?;
         match self.romaji.backspace() {
-            BackspaceResult::DeletedPending => Ok(true),
+            BackspaceResult::DeletedPending => {}
             BackspaceResult::DeleteHiragana | BackspaceResult::Empty => {
                 let Some((start, _)) = self.kana[..self.cursor].char_indices().next_back() else {
                     return Ok(false);
                 };
                 self.kana.replace_range(start..self.cursor, "");
                 self.cursor = start;
-                Ok(true)
             }
         }
+        self.resume_pending();
+        Ok(true)
+    }
+
+    /// 綴りが続かず英字のまま確定した文字が末尾に出てきたら、未確定ローマ字に戻す
+    /// (見た目は pending と同じ `g` に母音を打って `が` にできるように)
+    fn resume_pending(&mut self) {
+        if self.alpha {
+            return;
+        }
+        let resumed = self.romaji.resume_pending(&self.kana[..self.cursor]);
+        let start = self.cursor - resumed;
+        self.kana.replace_range(start..self.cursor, "");
+        self.cursor = start;
     }
 
     /// カーソル直後のかなを1文字消す (Delete)。未確定ローマ字は先に確定する。

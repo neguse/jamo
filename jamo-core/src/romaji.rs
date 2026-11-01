@@ -146,6 +146,22 @@ impl RomajiConverter {
         }
     }
 
+    /// `typed` の末尾で綴りの途中として続けられる最長部分を pending に戻し、
+    /// そのバイト数を返す (pending が空のときだけ戻す)
+    pub fn resume_pending(&mut self, typed: &str) -> usize {
+        if !self.pending.is_empty() {
+            return 0;
+        }
+        let run_start = typed
+            .trim_end_matches(|c: char| c.is_ascii_lowercase())
+            .len();
+        let Some(start) = (run_start..typed.len()).find(|&i| has_prefix_match(&typed[i..])) else {
+            return 0;
+        };
+        self.pending = typed[start..].to_string();
+        typed.len() - start
+    }
+
     /// pending を強制確定する。"n" は「ん」、未完成の子音は打った英字のまま返す
     /// (黙って消すと入力が失われる)
     pub fn flush(&mut self) -> String {
