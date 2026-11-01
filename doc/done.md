@@ -647,3 +647,11 @@
 - よかったこと: 表駆動なので特例分岐を足さず行の追加で済んだ
 - 判断: mozc の表の nn → ん より、常用で打ちやすい方を取る。代わりに ん + 母音/y は n' が要る (kanni → かんに、かんい は kan'i)
 - 残課題: なし
+
+### Backspace で出てきた英字を綴りに戻す ✓ (2026-11-01)
+- やったこと:
+    - 綴りが続かず英字のままかな列へ確定した文字が Backspace で末尾に出てきたら、未確定ローマ字に戻すようにした (gk BS a と gka BS a → が、sht BS a → しゃ)
+- 変更したファイル: jamo-core/src/romaji.rs, jamo-core/src/session.rs, jamo-core/src/session/tests.rs, doc/done.md
+- よかったこと: 打ち直しの経路を Session の Backspace 1 か所に閉じられた
+- 判断: か → k と 1 打ずつ崩す案は却下した。かなごとに打った綴りを持つ必要があり、普段の削除の打鍵も増える。gka BS BS a は g まで消しているので あ のまま。英字モード中は打った文字そのものなので戻さない
+- 残課題: Windows の composition.rs は Session 未移行なので対象外
