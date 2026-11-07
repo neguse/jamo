@@ -604,3 +604,32 @@ fn test_long_vowel_in_word_is_not_flipped() {
     let c = clause_candidates(&dict, "らーめん");
     assert!(!c.iter().flatten().any(|s| s.contains('-')), "{c:?}");
 }
+
+#[test]
+fn test_clause_candidates_with_other_word_boundaries() {
+    // 「さらに」は 1 語の 更に が最良でも、文節の候補に 皿 + に (語の区切りが違う並び) が並ぶ
+    let mut dict = HashMapDict::new();
+    dict.add("さらに", "更に", 1, 1, 1000, POS_CONTENT);
+    dict.add("さら", "皿", 2, 2, 3000, POS_CONTENT);
+    dict.add("さら", "沙羅", 2, 2, 4000, POS_CONTENT);
+    dict.add("に", "に", 3, 3, 500, POS_FUNCTION);
+    dict.add("に", "荷", 4, 4, 2000, POS_CONTENT);
+
+    let input = "さらに";
+    let mut lattice = Lattice::build(input, &dict);
+    let result = decode_nbest(&mut lattice, input, &SimpleConnectionCost, 5);
+    assert_eq!(result.clauses.len(), 1);
+    let candidates = &result.clauses[0].candidates;
+    assert_eq!(candidates[0], "更に");
+    let sara = candidates.iter().position(|c| c == "皿に");
+    let shara = candidates.iter().position(|c| c == "沙羅に");
+    assert!(
+        matches!((sara, shara), (Some(a), Some(b)) if a < b),
+        "皿に、沙羅に の順に並ぶはず: {candidates:?}"
+    );
+    // 自立語が 2 つ並ぶ (文節が 2 つになる) 並びは候補にしない
+    assert!(
+        !candidates.contains(&"皿荷".to_string()),
+        "文節をまたぐ並びは出ないはず: {candidates:?}"
+    );
+}

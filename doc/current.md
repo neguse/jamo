@@ -19,7 +19,7 @@
 | 10 | 完了 | 入力体験 (キー一打の手触り): T160-T165 完了。lite-dm2x の host ハーネス (`just test-ime`) と DM250 実機 (2026-08-25、keyin 注入 + screenshot) で検証済み |
 | 11 | 完了 | Linux IME (fcitx5): T170 アドオン + E2E (CI は Arch コンテナ)、T171 Omarchy 実機導入 |
 | 12 | 完了 | 本家 mozc との比較: T180 bench-engines.py (IPC で mozc_server を駆動)、T181 文節境界ペナルティ (boundary.def)、T182 記号の全角/半角候補 |
-| 13 | 進行中 | 決まった文字列を IME で打つ: T190 逆変換 (`jamo-cli reading`)、T191 変換候補の確認 (`jamo-cli candidates`) |
+| 13 | 進行中 | 決まった文字列を IME で打つ: T190 逆変換 (`jamo-cli reading`)、T191 変換候補の確認 (`jamo-cli candidates`)、T192 文節の中の語の区切りが違う候補 |
 
 ## ゴール (2026-10-01): mozc より省メモリ・高速で、精度は同等以上
 
@@ -47,6 +47,9 @@ BinDict は表層からの索引を持たないので、表層での辞書引き
 語の結び付きで決まる読み (雨が降り → ふり) は品詞の接続コストでは決まらず、mozc の再変換と同じく おり になる。
 `jamo-cli candidates [-n N] <input>...` は入力を Session に 1 文字ずつ入れて変換し (ローマ字はかなになる)、文節ごとの読みと候補を 1 行の JSON で出す。
 候補の並びは IME のセッションと同じ (学習は使わない) なので、打つ前にどの単位で変換すれば狙いの字が候補に出るかを確かめられる。
+文節の候補には、1 語の置き換えに加えて、文節の中の語の区切りが違う並び (さらに → 皿に、ついに → 対に) も並ぶ。
+文節の読みの範囲で、先頭で始まる語ごとに残りを付属語だけで埋める最も安い並びを作り、コスト順に n - 1 個まで足す。
+Top-1 は変わらず、コーパス (56 文) の Top-1 / Top-5 は 54/56 / 55/56 のまま、変換レイテンシ平均は 39 → 55 us (warm、repeat 20、同じ機械で本家は 964 us)。
 
 ## Iter 11: Linux IME (fcitx5)
 
@@ -167,7 +170,7 @@ jamo-core/cbindgen.toml -o jamo-core/include/jamo.h jamo-core`)。lite-dm2x 側
 
 ## テスト
 
-全267テスト通過 (2026-11-08 実測、cargo test。IPAdic / mozc データあり)
+全269テスト通過 (2026-11-08 実測、cargo test。IPAdic / mozc データあり)
 
 ## プロジェクト構成
 

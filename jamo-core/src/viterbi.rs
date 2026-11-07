@@ -306,8 +306,116 @@ pub fn decode_nbest(
         })
         .collect();
 
-    let clauses = group_clauses(&segments);
+    let lattice = &*lattice;
+    let clauses = group_clauses_with(&segments, |indices| {
+        let (first, last) = (indices[0], indices[indices.len() - 1]);
+        span_alternatives(lattice, conn, &path, first, last, n - 1)
+    });
     ConvertResult { segments, clauses }
+}
+
+/// 文節 (最良パスの path[first..=last]) の読みの範囲で、範囲の先頭で始まる語 (長さを問わない) ごとに、
+/// 残りを付属語だけで埋める最も安い並びをつないだ候補を、前後の語への接続を含めたコストの安い順に limit 個まで返す
+/// (文節は先頭の語 1 つと付属語の並び)。
+/// 1 語を同じ読みの別の語に置き換えた候補では出せない、文節の中の語の区切りが違う候補 (さらに → 皿に、ついに → 対に) を補う
+fn span_alternatives(
+    lattice: &Lattice,
+    conn: &dyn ConnectionCost,
+    path: &[usize],
+    first: usize,
+    last: usize,
+    limit: usize,
+) -> Vec<String> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let nodes = &lattice.nodes;
+    let (a, b) = (nodes[path[first]].start, nodes[path[last]].end);
+    let left = match first {
+        0 => nodes[lattice.bos_index()].right_id,
+        _ => nodes[path[first - 1]].right_id,
+    };
+    let right = path.get(last + 1).map_or(0, |&i| nodes[i].left_id);
+
+    // 範囲の先頭で始まる語と、範囲の中で始まる付属語 (開始位置ごとの、funcs の添字)
+    let mut heads = Vec::new();
+    let mut funcs: Vec<usize> = Vec::new();
+    let mut funcs_at: Vec<Vec<usize>> = vec![Vec::new(); b - a + 1];
+    for end in a + 1..=b {
+        for &i in &lattice.ends_at[end] {
+            let node = &nodes[i];
+            if node.start == a {
+                heads.push(i);
+            } else if node.start > a && node.start < end && node.pos_type == POS_FUNCTION {
+                funcs_at[node.start - a].push(funcs.len());
+                funcs.push(i);
+            }
+        }
+    }
+
+    // 付属語ごとに、そこから範囲の末尾までを付属語だけで埋める最も安い (コスト, 次の付属語)。
+    // 後ろの位置から決める。ある語の後ろの最良は (語の終わり, 語の right_id) だけで決まるので覚えておく
+    type Best = Option<(i64, Option<usize>)>;
+    let mut tail: Vec<Best> = vec![None; funcs.len()];
+    let mut after: Vec<Vec<(u16, Best)>> = vec![Vec::new(); b - a + 1];
+    let mut best_after = |tail: &[Best], right_id: u16, end: usize| -> Best {
+        if let Some(&(_, best)) = after[end - a].iter().find(|e| e.0 == right_id) {
+            return best;
+        }
+        let best = if end == b {
+            Some((conn.cost(right_id, right) as i64, None))
+        } else {
+            funcs_at[end - a]
+                .iter()
+                .filter_map(|&g| {
+                    let (cost, _) = tail[g]?;
+                    let left_id = nodes[funcs[g]].left_id;
+                    Some((
+                        cost.saturating_add(conn.cost(right_id, left_id) as i64),
+                        Some(g),
+                    ))
+                })
+                .min()
+        };
+        after[end - a].push((right_id, best));
+        best
+    };
+    for off in (1..b - a).rev() {
+        for &f in &funcs_at[off] {
+            let node = &nodes[funcs[f]];
+            tail[f] = best_after(&tail, node.right_id, node.end)
+                .map(|(cost, next)| (cost.saturating_add(node.word_cost), next));
+        }
+    }
+
+    // 先頭の語ごとの (コスト, 先頭の語, 続く付属語)。表層は安い順に、要る分だけ作る
+    let mut found: Vec<(i64, usize, Option<usize>)> = heads
+        .iter()
+        .filter_map(|&h| {
+            let node = &nodes[h];
+            let (cost, next) = best_after(&tail, node.right_id, node.end)?;
+            let cost = cost
+                .saturating_add(conn.cost(left, node.left_id) as i64)
+                .saturating_add(node.word_cost);
+            Some((cost, h, next))
+        })
+        .collect();
+    found.sort_unstable();
+    let mut out: Vec<String> = Vec::new();
+    for (_, h, mut next) in found {
+        let mut surface = nodes[h].surface.clone();
+        while let Some(g) = next {
+            surface.push_str(&nodes[funcs[g]].surface);
+            next = tail[g].and_then(|t| t.1);
+        }
+        if !out.contains(&surface) {
+            out.push(surface);
+            if out.len() == limit {
+                break;
+            }
+        }
+    }
+    out
 }
 
 /// 文節候補の末尾に読みのひらがな/カタカナを重複なしで追加する
@@ -375,6 +483,15 @@ fn push_symbol_width_variant(
 /// 自立語 (POS_CONTENT) が来たら新しい文節を開始
 /// 付属語 (POS_FUNCTION) は直前の文節に付く
 pub fn group_clauses(segments: &[Segment]) -> Vec<Clause> {
+    group_clauses_with(segments, |_| Vec::new())
+}
+
+/// group_clauses に、文節ごとの候補を足す `extra` (文節の語の segments での添字を受け取る) を加えたもの。
+/// 足す候補は、1 語を置き換えた候補の後、数字・記号・かなの候補の前に置く
+fn group_clauses_with(
+    segments: &[Segment],
+    extra: impl Fn(&[usize]) -> Vec<String>,
+) -> Vec<Clause> {
     if segments.is_empty() {
         return Vec::new();
     }
@@ -426,6 +543,11 @@ pub fn group_clauses(segments: &[Segment]) -> Vec<Clause> {
                     if !candidates.contains(&variant) {
                         candidates.push(variant);
                     }
+                }
+            }
+            for alt in extra(indices) {
+                if !candidates.contains(&alt) {
+                    candidates.push(alt);
                 }
             }
             push_number_variants(&mut candidates, &yomi);
