@@ -15,6 +15,7 @@ mod format;
 #[cfg(test)]
 mod tests;
 
+use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 
@@ -24,7 +25,7 @@ use format::*;
 
 use crate::bitvec::{BitRef, BitView};
 use crate::dict::{Dictionary, Entry};
-use crate::kana::to_katakana;
+use crate::kana::{is_kana, to_hiragana, to_katakana};
 use crate::viterbi::ConnectionCost;
 
 enum Storage {
@@ -220,6 +221,81 @@ impl BinDict {
         self.surface_coder.decode(&pool[start.min(end)..end])
     }
 
+    /// トークン t の (表層種別, left_id, right_id, 単語コスト, 品詞タイプ)
+    fn token_fields(
+        &self,
+        tokens: &[u8],
+        combos: &[u8],
+        t: usize,
+    ) -> Option<(u16, u16, u16, i16, u8)> {
+        if (t + 1) * TOKEN_LEN > tokens.len() {
+            return None;
+        }
+        let v = read_u16(tokens, t * TOKEN_LEN);
+        let cost = read_i16(tokens, t * TOKEN_LEN + 2);
+        let combo = (v & 0x3FFF) as usize;
+        if (combo + 1) * COMBO_LEN > combos.len() {
+            return None;
+        }
+        Some((
+            v >> 14,
+            read_u16(combos, combo * COMBO_LEN),
+            read_u16(combos, combo * COMBO_LEN + 2),
+            cost,
+            combos[combo * COMBO_LEN + 4],
+        ))
+    }
+
+    /// トークン t の読み。トークンの属する終端ノードから trie を根まで遡って復号する
+    fn token_reading(&self, t: usize) -> Option<String> {
+        let k = self
+            .bits(&self.layout.entry_bounds)
+            .rank1(t + 1)
+            .checked_sub(1)?;
+        let mut node = self.bits(&self.layout.terminal).select1(k)?;
+        let louds = self.bits(&self.layout.louds);
+        let labels = self.section(SEC_LABELS);
+        let mut codes = Vec::new();
+        // ノード m (1 = 根) の LOUDS のビットは m - 1 番目の 1 で、その前の 0 の数が親の番号
+        while node > 1 {
+            codes.push(*labels.get(node)?);
+            node = louds.rank0(louds.select1(node - 1)?);
+        }
+        codes.reverse();
+        Some(self.reading_coder.decode(&codes))
+    }
+
+    /// 読みちょうどの終端ノード
+    fn find_node(&self, reading: &str) -> Option<usize> {
+        let louds = self.bits(&self.layout.louds);
+        let labels = self.section(SEC_LABELS);
+        let mut node = 1;
+        for b in self.reading_coder.encode(reading) {
+            node = self.find_child(&louds, labels, node, b)?;
+        }
+        Some(node)
+    }
+
+    /// 表層プールのうち `wanted` (符号化した表層 → 元の表層) にある表層の id → 元の表層
+    fn pool_ids<'s>(&self, wanted: &HashMap<Vec<u8>, &'s str>) -> HashMap<usize, &'s str> {
+        let bounds = self.bits(&self.layout.surface_bounds);
+        let pool = self.section(SEC_SURFACE_POOL);
+        let mut found = HashMap::new();
+        let mut id = 0;
+        let mut start = 0;
+        for pos in 1..=pool.len() {
+            if pos < pool.len() && !bounds.get(pos) {
+                continue;
+            }
+            if let Some(&s) = wanted.get(&pool[start..pos]) {
+                found.insert(id, s);
+            }
+            id += 1;
+            start = pos;
+        }
+        found
+    }
+
     /// トークン範囲をエントリに復号する。`reading` は恒等表層用
     fn decode_entries(&self, range: std::ops::Range<usize>, reading: &str) -> Vec<Entry> {
         let tokens = self.section(SEC_TOKENS);
@@ -230,19 +306,11 @@ impl BinDict {
         let mut pool_rank = nonident.rank1(range.start.min(nonident.len()));
         let mut out = Vec::with_capacity(range.len());
         for t in range {
-            if (t + 1) * TOKEN_LEN > tokens.len() {
+            let Some((kind, left_id, right_id, cost, pos_type)) =
+                self.token_fields(tokens, combos, t)
+            else {
                 break;
-            }
-            let v = read_u16(tokens, t * TOKEN_LEN);
-            let cost = read_i16(tokens, t * TOKEN_LEN + 2);
-            let kind = v >> 14;
-            let combo = (v & 0x3FFF) as usize;
-            if (combo + 1) * COMBO_LEN > combos.len() {
-                break;
-            }
-            let left_id = read_u16(combos, combo * COMBO_LEN);
-            let right_id = read_u16(combos, combo * COMBO_LEN + 2);
-            let pos_type = combos[combo * COMBO_LEN + 4];
+            };
             let surface = match kind {
                 KIND_HIRAGANA => reading.to_string(),
                 KIND_KATAKANA => katakana.get_or_insert_with(|| to_katakana(reading)).clone(),
@@ -405,6 +473,65 @@ impl Dictionary for BinDict {
 
     fn suffix_penalty(&self, right_id: u16) -> i32 {
         self.boundary(right_id).1
+    }
+
+    /// かなだけの表層は読みの trie を (ひらがなにした表層で) 引く。
+    /// ほかの表層は表層プールを先頭から走査し、その表層を参照するトークンの読みを
+    /// trie を遡って復号する (表層からの索引を持たないので、1 回の呼び出しで辞書全体を読む)。
+    /// 読みと違うかなの表層 (プールにあるもの) は返さない
+    fn reverse_lookup(&self, surfaces: &[&str]) -> Vec<(String, Entry)> {
+        let mut out = Vec::new();
+        let mut pooled: HashMap<Vec<u8>, &str> = HashMap::new();
+        for &s in surfaces {
+            if is_kana(s) {
+                let reading = to_hiragana(s);
+                let Some(range) = self.find_node(&reading).and_then(|n| self.token_range(n)) else {
+                    continue;
+                };
+                for e in self.decode_entries(range, &reading) {
+                    if e.surface == s {
+                        out.push((reading.clone(), e));
+                    }
+                }
+            } else {
+                let mut codes = Vec::new();
+                if !s.is_empty() && self.surface_coder.encode(s, &mut codes).is_ok() {
+                    pooled.insert(codes, s);
+                }
+            }
+        }
+        if pooled.is_empty() {
+            return out;
+        }
+        let ids = self.pool_ids(&pooled);
+        let tokens = self.section(SEC_TOKENS);
+        let combos = self.section(SEC_COMBOS);
+        let surface_ids = self.section(SEC_SURFACE_IDS);
+        let nonident = self.bits(&self.layout.nonident);
+        for rank in 0..self.layout.nonident_count {
+            let Some(&surface) = ids.get(&self.surface_id_at(surface_ids, rank)) else {
+                continue;
+            };
+            let Some(t) = nonident.select1(rank) else {
+                continue;
+            };
+            let (Some((_, left_id, right_id, cost, pos_type)), Some(reading)) =
+                (self.token_fields(tokens, combos, t), self.token_reading(t))
+            else {
+                continue;
+            };
+            out.push((
+                reading,
+                Entry {
+                    surface: surface.to_string(),
+                    left_id,
+                    right_id,
+                    cost,
+                    pos_type,
+                },
+            ));
+        }
+        out
     }
 
     fn common_prefix_search(&self, input: &str) -> Vec<(usize, Vec<Entry>)> {

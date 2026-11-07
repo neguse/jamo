@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use jamo_core::bindict::BinDict;
 use jamo_core::ipadic::IpaDict;
+use jamo_core::session::Session;
 
 mod bench;
 mod ime_server;
@@ -20,6 +21,8 @@ fn main() {
 
     match args[1].as_str() {
         "convert" => cmd_convert(&args[2..]),
+        "candidates" => cmd_candidates(&args[2..]),
+        "reading" => cmd_reading(&args[2..]),
         "serve" => cmd_serve(&args[2..]),
         "dict" => cmd_dict(&args[2..]),
         "bench" => cmd_bench(&args[2..]),
@@ -35,6 +38,10 @@ fn print_usage() {
     eprintln!("Usage: jamo <command> [args]");
     eprintln!("Commands:");
     eprintln!("  convert [--dict DIR] <text>   かな漢字変換");
+    eprintln!(
+        "  candidates [--dict DIR] [-n N] <input>...  変換の文節と候補を JSON で (入力はローマ字かかな)"
+    );
+    eprintln!("  reading [--dict DIR] [--json] <text>...  逆変換 (漢字かな交じり → 読み)");
     eprintln!("  serve [--dict DIR] [--port N]  HTTPサーバー起動");
     eprintln!("  serve --ime [--dict DIR]       IME IPCサーバー起動");
     eprintln!(
@@ -146,6 +153,77 @@ fn cmd_convert(args: &[String]) {
 
     let text: String = result.segments.iter().map(|s| s.surface.as_str()).collect();
     println!("{text}");
+}
+
+/// 入力ごとに、IME のセッションで変換したときの文節と候補を 1 行の JSON で出す。
+/// 入力はキーを打つのと同じくセッションに 1 文字ずつ入れる (ローマ字はかなになり、かなはそのまま)。
+/// 候補の並びはセッションの変換と同じ (学習は使わない)
+fn cmd_candidates(args: &[String]) {
+    let (dict_path, rest) = parse_dict_arg(args);
+    let mut n = 9;
+    let mut inputs = Vec::new();
+    let mut i = 0;
+    while i < rest.len() {
+        if rest[i] == "-n" && i + 1 < rest.len() {
+            n = rest[i + 1].parse().unwrap_or(n);
+            i += 2;
+        } else {
+            inputs.push(rest[i].clone());
+            i += 1;
+        }
+    }
+    if inputs.is_empty() {
+        eprintln!("Usage: jamo candidates [--dict DIR] [-n N] <input>...");
+        std::process::exit(1);
+    }
+
+    let dict = load_dict(dict_path.as_deref());
+    for input in &inputs {
+        let mut session = Session::new();
+        for ch in input.chars() {
+            // Input 状態の feed は失敗しない
+            let _ = session.feed(ch);
+        }
+        let clauses: Vec<serde_json::Value> =
+            match session.convert(dict.as_ref(), dict.as_ref(), n, None) {
+                Ok(()) => session
+                    .clauses()
+                    .iter()
+                    .map(|c| serde_json::json!({"yomi": c.yomi, "candidates": c.candidates}))
+                    .collect(),
+                Err(_) => Vec::new(),
+            };
+        println!(
+            "{}",
+            serde_json::json!({"input": input, "clauses": clauses})
+        );
+    }
+}
+
+/// 漢字かな交じりの文字列ごとに読みを出す。--json なら語の区切りと語ごとの読みも出す
+fn cmd_reading(args: &[String]) {
+    let (dict_path, rest) = parse_dict_arg(args);
+    let json = rest.iter().any(|a| a == "--json");
+    let texts: Vec<&String> = rest.iter().filter(|a| *a != "--json").collect();
+    if texts.is_empty() {
+        eprintln!("Usage: jamo reading [--dict DIR] [--json] <text>...");
+        std::process::exit(1);
+    }
+
+    let dict = load_dict(dict_path.as_deref());
+    let texts: Vec<&str> = texts.iter().map(|t| t.as_str()).collect();
+    let all = jamo_core::reverse::readings(&texts, dict.as_ref(), dict.as_ref());
+    for (text, words) in texts.iter().zip(all) {
+        let reading: String = words.iter().map(|w| w.reading.as_str()).collect();
+        if json {
+            println!(
+                "{}",
+                serde_json::json!({"text": text, "reading": reading, "words": words})
+            );
+        } else {
+            println!("{reading}");
+        }
+    }
 }
 
 fn cmd_bench(args: &[String]) {

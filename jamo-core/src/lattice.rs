@@ -55,27 +55,48 @@ pub struct Lattice {
     pub input_len: usize,
 }
 
+impl Node {
+    /// 語のノード (Viterbi の累積コストは未設定)
+    pub fn word(
+        start: usize,
+        end: usize,
+        surface: String,
+        left_id: u16,
+        right_id: u16,
+        word_cost: i64,
+        pos_type: u8,
+    ) -> Self {
+        Node {
+            start,
+            end,
+            surface,
+            left_id,
+            right_id,
+            word_cost,
+            pos_type,
+            total_cost: i64::MAX,
+            prev: None,
+        }
+    }
+
+    /// 1 文字の未知語ノード (どの語にも入らない文字で入力を落とさないため)
+    pub fn unknown(start: usize, ch: char) -> Self {
+        Node::word(
+            start,
+            start + ch.len_utf8(),
+            ch.to_string(),
+            0,
+            0,
+            UNKNOWN_WORD_COST,
+            POS_CONTENT,
+        )
+    }
+}
+
 impl Lattice {
     /// 辞書を使ってラティスを構築
     pub fn build(input: &str, dict: &dyn Dictionary) -> Self {
-        let input_len = input.len();
         let mut nodes = Vec::new();
-        let mut ends_at = vec![Vec::new(); input_len + 1];
-
-        // BOS (文頭) ノード: 位置0で終了する特殊ノード
-        let bos_idx = nodes.len();
-        nodes.push(Node {
-            start: 0,
-            end: 0,
-            surface: String::new(),
-            left_id: 0,
-            right_id: 0,
-            word_cost: 0,
-            pos_type: 0,
-            total_cost: 0,
-            prev: None,
-        });
-        ends_at[0].push(bos_idx);
 
         // 各文字位置から辞書引き。未知語でも入力を落とさないため、1文字未知語ノードも入れる。
         let char_positions: Vec<(usize, char)> = input.char_indices().collect();
@@ -92,84 +113,62 @@ impl Lattice {
                 && !(i > 0 && char_positions[i - 1].1.is_ascii_digit())
             {
                 let run_len = remaining.bytes().take_while(u8::is_ascii_digit).count();
-                let idx = nodes.len();
-                nodes.push(Node {
-                    start: char_start,
-                    end: char_start + run_len,
-                    surface: remaining[..run_len].to_string(),
+                nodes.push(Node::word(
+                    char_start,
+                    char_start + run_len,
+                    remaining[..run_len].to_string(),
                     left_id,
                     right_id,
-                    word_cost: cost,
-                    pos_type: POS_CONTENT,
-                    total_cost: i64::MAX,
-                    prev: None,
-                });
-                ends_at[char_start + run_len].push(idx);
+                    cost,
+                    POS_CONTENT,
+                ));
             }
-            let results = dict.common_prefix_search(remaining);
-            for (match_len, entries) in results {
-                let byte_end = char_start + match_len;
+            for (match_len, entries) in dict.common_prefix_search(remaining) {
                 for entry in entries {
-                    let idx = nodes.len();
-                    nodes.push(Node {
-                        start: char_start,
-                        end: byte_end,
-                        surface: entry.surface,
-                        left_id: entry.left_id,
-                        right_id: entry.right_id,
-                        word_cost: entry.cost as i64,
-                        pos_type: entry.pos_type,
-                        total_cost: i64::MAX,
-                        prev: None,
-                    });
-                    ends_at[byte_end].push(idx);
+                    nodes.push(Node::word(
+                        char_start,
+                        char_start + match_len,
+                        entry.surface,
+                        entry.left_id,
+                        entry.right_id,
+                        entry.cost as i64,
+                        entry.pos_type,
+                    ));
                 }
             }
-
-            let byte_end = char_positions
-                .get(i + 1)
-                .map(|(pos, _)| *pos)
-                .unwrap_or(input_len);
-            let idx = nodes.len();
-            nodes.push(Node {
-                start: char_start,
-                end: byte_end,
-                surface: ch.to_string(),
-                left_id: 0,
-                right_id: 0,
-                word_cost: UNKNOWN_WORD_COST,
-                pos_type: POS_CONTENT,
-                total_cost: i64::MAX,
-                prev: None,
-            });
-            ends_at[byte_end].push(idx);
+            nodes.push(Node::unknown(char_start, ch));
         }
+        Self::from_words(input.len(), nodes, dict)
+    }
 
-        // 文節境界ペナルティ: 先頭で始まるノードに PREFIX、末尾で終わるノードに SUFFIX
-        // (mozc の boundary.def。「いく」単独で非自立動詞が勝つ等を抑える)
-        for node in nodes.iter_mut().skip(1) {
+    /// 語のノード (開始・終了は入力上のバイト位置) から、BOS と EOS を足したラティスを作る。
+    /// 入力の先頭で始まる語と末尾で終わる語には、文節境界ペナルティを足す
+    pub fn from_words(input_len: usize, words: Vec<Node>, dict: &dyn Dictionary) -> Self {
+        let mut nodes = Vec::with_capacity(words.len() + 2);
+        let mut ends_at = vec![Vec::new(); input_len + 1];
+
+        // BOS (文頭) ノード: 位置0で終了する特殊ノード
+        let mut bos = Node::word(0, 0, String::new(), 0, 0, 0, 0);
+        bos.total_cost = 0;
+        nodes.push(bos);
+        ends_at[0].push(0);
+
+        for mut node in words {
+            // 文節境界ペナルティ: 先頭で始まるノードに PREFIX、末尾で終わるノードに SUFFIX
+            // (mozc の boundary.def。「いく」単独で非自立動詞が勝つ等を抑える)
             if node.start == 0 {
                 node.word_cost += dict.prefix_penalty(node.left_id) as i64;
             }
             if node.end == input_len {
                 node.word_cost += dict.suffix_penalty(node.right_id) as i64;
             }
+            ends_at[node.end].push(nodes.len());
+            nodes.push(node);
         }
 
         // EOS (文末) ノード: 入力末尾で開始・終了する特殊ノード
-        let eos_idx = nodes.len();
-        nodes.push(Node {
-            start: input_len,
-            end: input_len,
-            surface: String::new(),
-            left_id: 0,
-            right_id: 0,
-            word_cost: 0,
-            pos_type: 0,
-            total_cost: i64::MAX,
-            prev: None,
-        });
-        ends_at[input_len].push(eos_idx);
+        ends_at[input_len].push(nodes.len());
+        nodes.push(Node::word(input_len, input_len, String::new(), 0, 0, 0, 0));
 
         Lattice {
             nodes,
