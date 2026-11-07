@@ -38,6 +38,10 @@ cargo run -- convert きょうはいいてんきですね
 # 逆変換 (漢字かな交じり → 読み)。--json で語の区切りと語ごとの読みも出す
 cargo run -- reading 東京に行きたい
 # → とうきょうにいきたい
+
+# 変換の文節と各文節の候補 (JSON、1 入力 1 行)。入力はキーを打つのと同じくローマ字かかな
+cargo run -- candidates -n 9 toukyouniikitai
+# → {"clauses":[{"candidates":["東京に",...],"yomi":"とうきょうに"},...],"input":"toukyouniikitai"}
 ```
 
 ### HTTP サーバー

@@ -134,3 +134,47 @@ fn test_cli_reading() {
     assert_eq!(surface, "東京に行きたい");
     assert_eq!(reading, "とうきょうにいきたい");
 }
+
+#[test]
+fn test_cli_candidates() {
+    let Some(dict) = ipadic_dir() else {
+        return;
+    };
+    // ローマ字はキーを打ったときと同じくかなになる。かなで渡しても同じ結果
+    let out = jamo(&[
+        "candidates",
+        "--dict",
+        dict,
+        "-n",
+        "5",
+        "toukyouniikitai",
+        "とうきょうにいきたい",
+    ]);
+    let lines: Vec<serde_json::Value> = out
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("json"))
+        .collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0]["input"], "toukyouniikitai");
+    assert_eq!(lines[0]["clauses"], lines[1]["clauses"]);
+
+    let clauses = lines[0]["clauses"].as_array().expect("clauses");
+    let yomi: String = clauses
+        .iter()
+        .map(|c| c["yomi"].as_str().unwrap())
+        .collect();
+    assert_eq!(yomi, "とうきょうにいきたい");
+    let first: String = clauses
+        .iter()
+        .map(|c| c["candidates"][0].as_str().unwrap())
+        .collect();
+    let converted = jamo(&["convert", "--dict", dict, "とうきょうにいきたい"]);
+    assert_eq!(first, converted.trim(), "先頭の候補は convert と同じ");
+    for c in clauses {
+        let candidates = c["candidates"].as_array().unwrap();
+        assert!(
+            candidates.iter().any(|x| x == &c["yomi"]),
+            "文節の候補にかながある: {c}"
+        );
+    }
+}

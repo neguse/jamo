@@ -443,6 +443,7 @@ jamo が省メモリ・高速で精度同等以上であること。結果は do
 | # | タスク | 成果物 |
 |---|--------|--------|
 | T190 ✓ | 逆変換 | jamo-core/src/reverse.rs (`reading` / `readings`)、`Dictionary::reverse_lookup`、`jamo-cli reading [--json]` |
+| T191 ✓ | 変換候補の確認 | `jamo-cli candidates [-n N] <input>...`: Session で変換した文節と候補を JSON で出す (並びは IME と同じ) |
 
 ---
 
