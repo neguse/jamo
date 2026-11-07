@@ -35,6 +35,9 @@ pub trait Dictionary {
     fn suffix_penalty(&self, _right_id: u16) -> i32 {
         0
     }
+
+    /// 表層が `surfaces` のどれかと一致するエントリを、読みと組にして返す (逆変換用)
+    fn reverse_lookup(&self, surfaces: &[&str]) -> Vec<(String, Entry)>;
 }
 
 /// ハードコードされたテスト用辞書 (HashMap)
@@ -125,6 +128,18 @@ impl Dictionary for HashMapDict {
             }
         }
         results
+    }
+
+    fn reverse_lookup(&self, surfaces: &[&str]) -> Vec<(String, Entry)> {
+        let mut out = Vec::new();
+        for (yomi, entries) in &self.entries {
+            for e in entries {
+                if surfaces.contains(&e.surface.as_str()) {
+                    out.push((yomi.clone(), e.clone()));
+                }
+            }
+        }
+        out
     }
 }
 

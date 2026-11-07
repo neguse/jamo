@@ -34,6 +34,10 @@ cargo run -- dict build -o data/ipadic.dict
 # かな漢字変換
 cargo run -- convert きょうはいいてんきですね
 # → 今日はいい天気ですね
+
+# 逆変換 (漢字かな交じり → 読み)。--json で語の区切りと語ごとの読みも出す
+cargo run -- reading 東京に行きたい
+# → とうきょうにいきたい
 ```
 
 ### HTTP サーバー

@@ -20,6 +20,7 @@ fn main() {
 
     match args[1].as_str() {
         "convert" => cmd_convert(&args[2..]),
+        "reading" => cmd_reading(&args[2..]),
         "serve" => cmd_serve(&args[2..]),
         "dict" => cmd_dict(&args[2..]),
         "bench" => cmd_bench(&args[2..]),
@@ -35,6 +36,7 @@ fn print_usage() {
     eprintln!("Usage: jamo <command> [args]");
     eprintln!("Commands:");
     eprintln!("  convert [--dict DIR] <text>   かな漢字変換");
+    eprintln!("  reading [--dict DIR] [--json] <text>...  逆変換 (漢字かな交じり → 読み)");
     eprintln!("  serve [--dict DIR] [--port N]  HTTPサーバー起動");
     eprintln!("  serve --ime [--dict DIR]       IME IPCサーバー起動");
     eprintln!(
@@ -146,6 +148,32 @@ fn cmd_convert(args: &[String]) {
 
     let text: String = result.segments.iter().map(|s| s.surface.as_str()).collect();
     println!("{text}");
+}
+
+/// 漢字かな交じりの文字列ごとに読みを出す。--json なら語の区切りと語ごとの読みも出す
+fn cmd_reading(args: &[String]) {
+    let (dict_path, rest) = parse_dict_arg(args);
+    let json = rest.iter().any(|a| a == "--json");
+    let texts: Vec<&String> = rest.iter().filter(|a| *a != "--json").collect();
+    if texts.is_empty() {
+        eprintln!("Usage: jamo reading [--dict DIR] [--json] <text>...");
+        std::process::exit(1);
+    }
+
+    let dict = load_dict(dict_path.as_deref());
+    let texts: Vec<&str> = texts.iter().map(|t| t.as_str()).collect();
+    let all = jamo_core::reverse::readings(&texts, dict.as_ref(), dict.as_ref());
+    for (text, words) in texts.iter().zip(all) {
+        let reading: String = words.iter().map(|w| w.reading.as_str()).collect();
+        if json {
+            println!(
+                "{}",
+                serde_json::json!({"text": text, "reading": reading, "words": words})
+            );
+        } else {
+            println!("{reading}");
+        }
+    }
 }
 
 fn cmd_bench(args: &[String]) {

@@ -90,3 +90,47 @@ fn test_cli_convert_covers_full_input() {
     // 接続コスト付きで天気が出る
     assert!(result.contains("天気"), "天気が含まれるはず: {result}");
 }
+
+/// IPAdic の辞書 (テストの作業 dir は crate の dir なので、workspace の data/ も見る)
+fn ipadic_dir() -> Option<&'static str> {
+    ["data/ipadic", "../data/ipadic"]
+        .into_iter()
+        .find(|p| std::path::Path::new(p).exists())
+}
+
+fn jamo(args: &[&str]) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_jamo-cli"))
+        .args(args)
+        .output()
+        .expect("failed to execute jamo-cli");
+    assert!(output.status.success(), "jamo-cli failed: {output:?}");
+    String::from_utf8(output.stdout).expect("invalid utf8")
+}
+
+#[test]
+fn test_cli_reading() {
+    let Some(dict) = ipadic_dir() else {
+        return;
+    };
+    let out = jamo(&["reading", "--dict", dict, "東京に行きたい", "私は学生です"]);
+    assert_eq!(
+        out.lines().collect::<Vec<_>>(),
+        vec!["とうきょうにいきたい", "わたしはがくせいです"]
+    );
+
+    let out = jamo(&["reading", "--dict", dict, "--json", "東京に行きたい"]);
+    let v: serde_json::Value = serde_json::from_str(out.trim()).expect("json");
+    assert_eq!(v["text"], "東京に行きたい");
+    assert_eq!(v["reading"], "とうきょうにいきたい");
+    let words = v["words"].as_array().expect("words");
+    let surface: String = words
+        .iter()
+        .map(|w| w["surface"].as_str().unwrap())
+        .collect();
+    let reading: String = words
+        .iter()
+        .map(|w| w["reading"].as_str().unwrap())
+        .collect();
+    assert_eq!(surface, "東京に行きたい");
+    assert_eq!(reading, "とうきょうにいきたい");
+}

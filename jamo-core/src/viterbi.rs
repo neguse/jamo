@@ -151,13 +151,9 @@ pub fn decode(lattice: &mut Lattice, input: &str, conn: &dyn ConnectionCost) -> 
     decode_nbest(lattice, input, conn, 1)
 }
 
-/// Viterbi デコードを実行して N-best 候補付きの結果を返す
-pub fn decode_nbest(
-    lattice: &mut Lattice,
-    input: &str,
-    conn: &dyn ConnectionCost,
-    n: usize,
-) -> ConvertResult {
+/// Viterbi の前進と後退で最良の語の並びを求め、BOS と EOS を除いたノードの番号を返す。
+/// 各ノードの total_cost (BOS からそのノードまでの最良コスト) も設定する
+pub fn best_path(lattice: &mut Lattice, conn: &dyn ConnectionCost) -> Vec<usize> {
     let input_len = lattice.input_len;
 
     // 前進: 各ノードの最適コストと最適前ノードを計算。
@@ -245,6 +241,17 @@ pub fn decode_nbest(
         current = prev;
     }
     path.reverse();
+    path
+}
+
+/// Viterbi デコードを実行して N-best 候補付きの結果を返す
+pub fn decode_nbest(
+    lattice: &mut Lattice,
+    input: &str,
+    conn: &dyn ConnectionCost,
+    n: usize,
+) -> ConvertResult {
+    let path = best_path(lattice, conn);
 
     // パスからセグメントを生成 (N-best 候補付き)
     let n = n.max(1);

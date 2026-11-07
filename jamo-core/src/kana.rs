@@ -29,6 +29,13 @@ pub fn to_hiragana(s: &str) -> String {
         .collect()
 }
 
+/// ひらがな・カタカナ・長音記号だけの空でない文字列か
+pub fn is_kana(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| matches!(c as u32, 0x3041..=0x3096 | 0x30A1..=0x30F6) || c == 'ー')
+}
+
 /// ASCII の印字可能文字を全角に変換 (それ以外はそのまま)。空白は全角空白
 pub fn to_wide(s: &str) -> String {
     s.chars()
@@ -79,6 +86,15 @@ mod tests {
     fn test_katakana_roundtrip() {
         assert_eq!(to_katakana("きょうはーabc"), "キョウハーabc");
         assert_eq!(to_hiragana("キョウハーabc"), "きょうはーabc");
+    }
+
+    #[test]
+    fn test_is_kana() {
+        assert!(is_kana("ひらがな"));
+        assert!(is_kana("カタカナー"));
+        assert!(!is_kana("漢字かな"));
+        assert!(!is_kana("abc"));
+        assert!(!is_kana(""));
     }
 
     #[test]

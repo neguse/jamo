@@ -655,3 +655,14 @@
 - よかったこと: 打ち直しの経路を Session の Backspace 1 か所に閉じられた
 - 判断: か → k と 1 打ずつ崩す案は却下した。かなごとに打った綴りを持つ必要があり、普段の削除の打鍵も増える。gka BS BS a は g まで消しているので あ のまま。英字モード中は打った文字そのものなので戻さない
 - 残課題: Windows の composition.rs は Session 未移行なので対象外
+
+### 逆変換 (表層 → 読み) ✓ (2026-11-08)
+- やったこと:
+    - 漢字かな交じりの文字列に読みを付ける `jamo_core::reverse::{reading, readings}` と `jamo-cli reading [--json]` を足した。決まった文字列を IME で打つ道具が、打つ読みを変換と同じ辞書・コストで決められるようにするため
+    - 変換と同じ単語コスト・接続コスト・文節境界ペナルティで、入力の部分文字列と表層が一致する語のラティスを作り、Viterbi で最良の語の並びを選ぶ (mozc の再変換と同じ考え方)。同じ字でも前後で読みが決まる (待っている間に → まっているあいだに、間に合う → まにあう)
+    - 表層で引く `Dictionary::reverse_lookup` を足した。BinDict は表層からの索引を持たないので、かなだけの表層は読みの trie を引き、ほかは表層プールを 1 回走査してトークンを集め、読みは終端ノードから LOUDS を根まで遡って復号する
+    - Lattice::build から BOS/EOS と文節境界ペナルティの組み立てを `Lattice::from_words` に、decode_nbest から前進と後退を `viterbi::best_path` に切り出し、逆変換のラティスでも使う
+- 変更したファイル: jamo-core/src/reverse.rs (新規), jamo-core/src/reverse/tests.rs (新規), jamo-core/tests/reverse_test.rs (新規), jamo-core/src/dict.rs, jamo-core/src/bindict/mod.rs, jamo-core/src/kana.rs, jamo-core/src/lattice.rs, jamo-core/src/viterbi.rs, jamo-core/src/lib.rs, jamo-cli/src/main.rs, jamo-cli/tests/cli_test.rs, README.md, doc/done.md, doc/current.md, doc/tasks.md
+- よかったこと: 重いのは表層での辞書引き (プールの走査) だけなので、複数の文字列の部分文字列をまとめて 1 回で引けば、文字列の数が増えても 1 回分で済む
+- 判断: 表層からの索引 (mozc の value trie に当たるもの) を辞書に足す案は、辞書フォーマットと配布済みの辞書が変わるので見送った。逆変換は打つ前にまとめて呼ぶ使い方なので、1 回の走査で足りる。読みと違うかなの表層 (プールにあるもの) は引かない。名詞,接尾 や連濁形の読み (勝ち → がち) を選ぶ誤りは辞書のコストどおりで、mozc の再変換も同じ読みを返すので、品詞ごとの補正は入れない
+- 残課題: 語の結び付きで決まる読み (雨が降り → ふり) は品詞の接続コストだけでは決まらない (mozc の再変換も おり)。C API (jamo.h) には出していない
