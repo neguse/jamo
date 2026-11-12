@@ -114,15 +114,18 @@ fn test_sokuon() {
 #[test]
 fn test_nn() {
     assert_eq!(convert_all("nn"), "ん");
-    // nn + 母音/y は ん + な行
+    // nn + 母音は ん + な行
     assert_eq!(convert_all("onna"), "おんな");
     assert_eq!(convert_all("kannin"), "かんにん");
-    assert_eq!(convert_all("shinnyuu"), "しんにゅう");
     // n を 3 つ打っても同じ
     assert_eq!(convert_all("onnna"), "おんな");
+    // nn + y は ん + や行、ん + にゃ行は nnn で打つ
+    assert_eq!(convert_all("nnyaro"), "んやろ");
+    assert_eq!(convert_all("shinnyuu"), "しんゆう");
+    assert_eq!(convert_all("shinnnyuu"), "しんにゅう");
     // nn + 子音は ん + 子音
     assert_eq!(convert_all("sannka"), "さんか");
-    // ん + 母音/y は n' で打つ
+    // ん + 母音/y は n' でも打てる
     assert_eq!(convert_all("kan'i"), "かんい");
     assert_eq!(convert_all("hon'ya"), "ほんや");
     assert_eq!(convert_all("nnn"), "んん");
@@ -337,7 +340,17 @@ fn test_kana_to_romaji_sokuon_and_n() {
     assert_eq!(kana_to_romaji("かんい"), "kan'i");
     assert_eq!(kana_to_romaji("ほんや"), "hon'ya");
     assert_eq!(kana_to_romaji("かんな"), "kanna");
-    for kana in ["かんい", "ほんや", "かんな", "んん", "んんな", "しんにゅう"] {
+    assert_eq!(kana_to_romaji("しんにゅう"), "shinnnyuu");
+    for kana in [
+        "かんい",
+        "ほんや",
+        "かんな",
+        "んん",
+        "んんな",
+        "しんにゅう",
+        "しんゆう",
+        "んんにゃ",
+    ] {
         assert_eq!(convert_all(&kana_to_romaji(kana)), kana);
     }
     assert_eq!(kana_to_romaji("ほん"), "hon");
