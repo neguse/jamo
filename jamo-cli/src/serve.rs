@@ -83,34 +83,22 @@ async fn handle_resize(
         }
     };
 
-    let new_boundaries =
-        match jamo_core::resize_boundaries(&params.q, &boundaries, params.clause, params.delta) {
-            Some(b) => b,
-            None => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({"error": "invalid resize operation"})),
-                )
-                    .into_response();
-            }
-        };
-
-    let result = match jamo_core::try_convert_with_boundaries(
+    let Some(result) = jamo_core::resize_convert(
         &params.q,
-        &new_boundaries,
+        &boundaries,
+        params.clause,
+        params.delta,
         dict.as_ref(),
         dict.as_ref(),
         params.n,
-    ) {
-        Ok(result) => result,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": e.to_string()})),
-            )
-                .into_response();
-        }
+    ) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "invalid resize operation"})),
+        )
+            .into_response();
     };
+    let new_boundaries = jamo_core::clause_boundaries(&result.clauses);
 
     let clauses: Vec<ClauseResponse> = result
         .clauses

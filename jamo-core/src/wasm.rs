@@ -72,12 +72,17 @@ impl JamoEngine {
         let boundaries: Vec<usize> = serde_json::from_str(boundaries_json)
             .map_err(|e| JsError::new(&format!("invalid boundaries: {e}")))?;
 
-        let new_boundaries = crate::resize_boundaries(input, &boundaries, clause_idx, delta)
-            .ok_or_else(|| JsError::new("invalid resize operation"))?;
-
-        let result =
-            crate::try_convert_with_boundaries(input, &new_boundaries, &self.dict, &self.dict, n)
-                .map_err(|e| JsError::new(&e.to_string()))?;
+        let result = crate::resize_convert(
+            input,
+            &boundaries,
+            clause_idx,
+            delta,
+            &self.dict,
+            &self.dict,
+            n,
+        )
+        .ok_or_else(|| JsError::new("invalid resize operation"))?;
+        let new_boundaries = crate::clause_boundaries(&result.clauses);
 
         let clauses: Vec<serde_json::Value> = result
             .clauses
