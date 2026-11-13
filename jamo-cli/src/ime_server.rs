@@ -21,16 +21,8 @@ fn process_request(request: &IpcRequest, dict: &BinDict) -> IpcResponse {
             clause,
             delta,
             n,
-        } => match jamo_core::resize_boundaries(input, boundaries, *clause, *delta) {
-            Some(new_boundaries) => {
-                match jamo_core::try_convert_with_boundaries(input, &new_boundaries, dict, dict, *n)
-                {
-                    Ok(result) => IpcResponse::Convert { result },
-                    Err(e) => IpcResponse::Error {
-                        message: e.to_string(),
-                    },
-                }
-            }
+        } => match jamo_core::resize_convert(input, boundaries, *clause, *delta, dict, dict, *n) {
+            Some(result) => IpcResponse::Convert { result },
             None => IpcResponse::Error {
                 message: "invalid resize operation".to_string(),
             },

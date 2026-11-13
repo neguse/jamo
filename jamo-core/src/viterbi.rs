@@ -563,73 +563,62 @@ fn group_clauses_with(
         .collect()
 }
 
-/// 文節境界を調整する (伸縮)
-/// clause_idx: 伸縮する文節のインデックス
-/// delta: +N で文字数分伸ばす (右に境界を移動), -N で縮める (左に境界を移動)
-/// 戻り値: 新しい文節境界バイト位置のリスト (不正な操作の場合は None)
-pub fn resize_boundaries(
+/// 文節 clause_idx を delta 文字伸縮して再変換する。
+/// 伸縮した文節までは境界を固定し、後ろは通常の変換で区切り直す
+/// (mozc と同じく、最後の文節を縮めると縮めた分が新しい文節になる)。
+/// 不正な操作 (文節が空になる、入力末尾を越える、境界が不正) は None
+pub fn resize_convert(
     input: &str,
     boundaries: &[usize],
     clause_idx: usize,
     delta: i32,
-) -> Option<Vec<usize>> {
-    if validate_boundaries(input, boundaries).is_err()
-        || clause_idx >= boundaries.len()
-        || boundaries.is_empty()
-    {
-        return None;
+    dict: &dyn crate::dict::Dictionary,
+    conn: &dyn ConnectionCost,
+    n: usize,
+) -> Option<ConvertResult> {
+    let end = resized_end(input, boundaries, clause_idx, delta)?;
+    let mut fixed = boundaries[..clause_idx].to_vec();
+    fixed.push(end);
+    let mut result = try_convert_with_boundaries(&input[..end], &fixed, dict, conn, n).ok()?;
+    if end < input.len() {
+        let mut lat = Lattice::build(&input[end..], dict);
+        let rest = decode_nbest(&mut lat, &input[end..], conn, n);
+        result.segments.extend(rest.segments);
+        result.clauses.extend(rest.clauses);
     }
+    Some(result)
+}
 
-    // 最後の境界は入力末尾に固定
-    if clause_idx == boundaries.len() - 1 {
-        return None; // 最後の文節は伸縮不可
-    }
-
-    let current = boundaries[clause_idx];
-    let next = boundaries[clause_idx + 1];
-    let prev_start = if clause_idx > 0 {
+/// 伸縮後の文節 clause_idx の終了バイト位置
+fn resized_end(input: &str, boundaries: &[usize], clause_idx: usize, delta: i32) -> Option<usize> {
+    validate_boundaries(input, boundaries).ok()?;
+    let end = *boundaries.get(clause_idx)?;
+    let start = if clause_idx > 0 {
         boundaries[clause_idx - 1]
     } else {
         0
     };
-
-    let new_pos = if delta > 0 {
-        // 伸ばす: 次の文節の先頭から delta 文字分を奪う
-        let remaining = &input[current..next];
-        let char_count = remaining.chars().count();
-        let move_count = delta as usize;
-        if move_count >= char_count {
-            // 次の文節を完全に吸収 → 境界を削除して統合
-            let mut new_boundaries = boundaries.to_vec();
-            new_boundaries.remove(clause_idx);
-            return validate_boundaries(input, &new_boundaries)
-                .ok()
-                .map(|()| new_boundaries);
-        }
-        remaining
+    let steps = delta.unsigned_abs() as usize;
+    if delta > 0 {
+        input[end..]
             .char_indices()
-            .nth(move_count)
-            .map(|(offset, _)| current + offset)
-            .unwrap_or(next)
-    } else {
-        // 縮める: 現在の文節の末尾から |delta| 文字分を次の文節に渡す
-        let clause_reading = &input[prev_start..current];
-        let char_positions: Vec<usize> = clause_reading
+            .map(|(offset, _)| end + offset)
+            .chain(std::iter::once(input.len()))
+            .nth(steps)
+    } else if delta < 0 {
+        let positions: Vec<usize> = input[start..end]
             .char_indices()
-            .map(|(offset, _)| prev_start + offset)
+            .map(|(offset, _)| start + offset)
             .collect();
-        let move_count = (-delta) as usize;
-        if move_count >= char_positions.len() {
-            return None; // 現在の文節がなくなる
-        }
-        char_positions[char_positions.len() - move_count]
-    };
-
-    let mut new_boundaries = boundaries.to_vec();
-    new_boundaries[clause_idx] = new_pos;
-    validate_boundaries(input, &new_boundaries)
-        .ok()
-        .map(|()| new_boundaries)
+        // 先頭 (positions[0]) まで縮めると文節が空になる
+        positions
+            .len()
+            .checked_sub(steps)
+            .filter(|&i| i > 0)
+            .map(|i| positions[i])
+    } else {
+        None
+    }
 }
 
 /// 文節境界を指定して変換する

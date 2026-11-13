@@ -57,8 +57,8 @@ pub fn convert_nbest(
 /// 文節グルーピングのみ (テスト用に公開)
 pub use viterbi::group_clauses;
 
-/// 文節境界を調整する
-pub use viterbi::resize_boundaries;
+/// 文節を伸縮して再変換する
+pub use viterbi::resize_convert;
 pub use viterbi::validate_boundaries;
 
 /// 文節境界を指定して変換する

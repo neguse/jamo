@@ -702,3 +702,14 @@
 - よかったこと: 添字 end は node.start との比較にも使うので、enumerate + skip/take より範囲と zip した方が読みやすい
 - 判断: `#[allow]` で黙らせる案は却下 (書き換えで素直に消せる)
 - 残課題: `cargo clippy --all-targets` で出るテストコード側の警告 (bitvec.rs, ipadic/tests.rs) は CI の対象外なので残している
+
+### T183 文節伸縮で文節を増やす ✓ (2026-11-13)
+- やったこと:
+    - 伸縮しても文節数が増えなかった。最後の文節は縮められず、縮めた文字を受け取った次の文節は 1 文節に固定されたまま再変換されていた
+    - `viterbi::resize_convert`: 伸縮した文節までは境界を固定して変換し、後ろは通常の変換 (decode_nbest) で区切り直す。最後の文節を縮めると縮めた分が新しい文節になる
+    - `resize_boundaries` + `try_convert_with_boundaries` の組を呼んでいた session / wasm / serve / ime_server を `resize_convert` に置き換え、`resize_boundaries` は公開をやめた。wasm と serve が返す boundaries は再変換結果の文節から計算する
+    - 伸縮量 0 で添字が範囲外になり panic していたのを None にした
+- 変更したファイル: jamo-core/src/viterbi.rs, jamo-core/src/viterbi/tests.rs, jamo-core/src/session.rs, jamo-core/src/session/tests.rs, jamo-core/src/lib.rs, jamo-core/src/wasm.rs, jamo-cli/src/serve.rs, jamo-cli/src/ime_server.rs, doc/tasks.md, doc/current.md, doc/done.md
+- よかったこと: mozc 辞書で「今日は|いい天気」の最後の文節を縮めると「今日は|良い点|き」、「私の|名前は|中野です」の先頭を縮めると「私|の|名前は|中野です」になり、2 文節から 3 文節を作れる
+- 判断: 本家 (segments.cc の Segments::Resize) は縮めた分を次の文節にだけ足して FREE にし、それより後ろの文節は区切りを保つ。jamo は伸縮した文節より後ろをまとめて区切り直す (文節ごとの FIXED/FREE 状態を持たずに済む)。伸ばす量は次の文節の長さで止めず、入力末尾までの文字数を超えたら None (本家と同じ)。以前は次の文節の長さ以上伸ばすと次の文節をちょうど吸収していた
+- 残課題: 再変換で全文節の選択が先頭候補に戻る (伸縮前に選んだ候補を保たない) のは以前のまま

@@ -357,11 +357,16 @@ impl Session {
         if self.state() != SessionState::Converting {
             return Err(SessionError::InvalidState);
         }
-        let new_boundaries =
-            crate::resize_boundaries(&self.kana, &self.boundaries, self.focus, delta)
-                .ok_or(SessionError::InvalidResize)?;
-        let result = crate::try_convert_with_boundaries(&self.kana, &new_boundaries, dict, conn, n)
-            .map_err(|_| SessionError::InvalidResize)?;
+        let result = crate::resize_convert(
+            &self.kana,
+            &self.boundaries,
+            self.focus,
+            delta,
+            dict,
+            conn,
+            n,
+        )
+        .ok_or(SessionError::InvalidResize)?;
         let focus = self.focus;
         self.apply_result(result, learning);
         self.focus = focus.min(self.clauses.len().saturating_sub(1));
