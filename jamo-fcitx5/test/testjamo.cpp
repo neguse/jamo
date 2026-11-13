@@ -114,6 +114,16 @@ void run(Instance *instance) {
     h.expect(h.ic()->inputPanel().clientPreedit().toString());
     FCITX_ASSERT(h.key(Key(FcitxKey_Return)));
 
+    // 変換前の Shift+←/→ はアプリへ通さず、← / → と同じくカーソルを動かす
+    h.type("kyouha");
+    FCITX_ASSERT(h.key(Key("Shift+Left")));
+    FCITX_ASSERT(h.ic()->inputPanel().clientPreedit().cursor() == 9)
+        << h.ic()->inputPanel().clientPreedit().cursor();
+    FCITX_ASSERT(h.key(Key("Shift+Right")));
+    FCITX_ASSERT(h.ic()->inputPanel().clientPreedit().cursor() == 12)
+        << h.ic()->inputPanel().clientPreedit().cursor();
+    FCITX_ASSERT(h.key(Key(FcitxKey_Escape)));
+
     // 大文字始まりは英字のまま
     h.expect("Rust");
     h.type("Rust");
