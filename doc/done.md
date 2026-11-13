@@ -693,3 +693,12 @@
 - よかったこと: 表駆動なので行を消すだけで済み、Session 側の変更は要らなかった
 - 判断: mozc 辞書の読み (重複除く) で ん + や行 は 3291、ん + にゃ行 は 350 で、多い方を短く打てる mozc の流儀に戻した。nn + 母音 (konnichiha → こんにちは) は ん + 母音 8209、ん + な行 10037 とほぼ半々なので今のまま残した。逆変換の ん + や行 は n' のまま (nn でも打てるが、ん + 母音と同じ綴りにそろえる)
 - 残課題: なし
+
+### Rust 1.100 の clippy (needless_range_loop) 対応 ✓ (2026-11-13)
+- やったこと:
+    - Rust 1.100 の clippy で `viterbi.rs` の文節内の区切り候補 (終了位置ごとの走査) が needless_range_loop になり、CI の check ジョブが落ちていた
+    - 終了位置の範囲と `ends_at` のスライスを zip して回すようにした (挙動は同じ)
+- 変更したファイル: jamo-core/src/viterbi.rs, doc/done.md
+- よかったこと: 添字 end は node.start との比較にも使うので、enumerate + skip/take より範囲と zip した方が読みやすい
+- 判断: `#[allow]` で黙らせる案は却下 (書き換えで素直に消せる)
+- 残課題: `cargo clippy --all-targets` で出るテストコード側の警告 (bitvec.rs, ipadic/tests.rs) は CI の対象外なので残している

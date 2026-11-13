@@ -341,8 +341,8 @@ fn span_alternatives(
     let mut heads = Vec::new();
     let mut funcs: Vec<usize> = Vec::new();
     let mut funcs_at: Vec<Vec<usize>> = vec![Vec::new(); b - a + 1];
-    for end in a + 1..=b {
-        for &i in &lattice.ends_at[end] {
+    for (end, ends) in (a + 1..=b).zip(&lattice.ends_at[a + 1..=b]) {
+        for &i in ends {
             let node = &nodes[i];
             if node.start == a {
                 heads.push(i);
