@@ -722,3 +722,13 @@
 - よかったこと: testfrontend の sendKeyEvent の戻り値 (受け取ったか) で、アプリへ漏れたかを直接確かめられる
 - 判断: 本家 mozc の MS-IME 式キーマップ (src/data/keymap/ms-ime.tsv) と同じく Composition の Shift+←/→ は MoveCursorLeft/Right にする。変換を始めて最初の文節を縮める案は、mozc のどのキーマップ (ms-ime / atok / kotoeri) にもないので却下
 - 残課題: なし
+
+### fetch-mozc.sh で取る mozc の版を固定できるようにする ✓ (2026-11-18)
+- やったこと:
+    - `fetch-mozc.sh` が mozc の master を決め打ちで取っていて、辞書を配る build が毎回違う版の辞書を作りえた
+    - env `MOZC_REF` で取る commit か branch を選べるようにした (既定は master のまま)
+    - mozc の LICENSE (BSD-3-Clause の表示) も辞書のディレクトリに取るようにした。辞書バイナリを配るときに README.txt と一緒に同梱する物が揃う
+- 変更したファイル: scripts/fetch-mozc.sh, README.md, THIRD_PARTY_NOTICES, doc/done.md
+- よかったこと: raw.githubusercontent.com は branch 名と同じ形で commit を受けるので、URL の 1 箇所を変えるだけで済む
+- 判断: 固定する commit は jamo に持たず、辞書を配る側 (呼び出し側) が渡す。jamo の開発と CI は今までどおり master を追う
+- 残課題: なし
