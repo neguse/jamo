@@ -731,4 +731,12 @@
 - 変更したファイル: scripts/fetch-mozc.sh, README.md, THIRD_PARTY_NOTICES, doc/done.md
 - よかったこと: raw.githubusercontent.com は branch 名と同じ形で commit を受けるので、URL の 1 箇所を変えるだけで済む
 - 判断: 固定する commit は jamo に持たず、辞書を配る側 (呼び出し側) が渡す。jamo の開発と CI は今までどおり master を追う
+
+### nn を mozc と同じく常に ん にする ✓ (2026-11-21)
+- やったこと:
+    - nn + 母音を ん + な行にする行 (nna → んな など) と nnn の行を消し、mozc の表と同じく nn をその場で ん に確定するようにした (hanni → はんい、rennai → れんあい、zenninn → ぜんいん)。ん + な行は n を 3 つ打つ (konnna → こんな、konnnichiha → こんにちは)
+    - 逆変換の ん を、次が母音/y/n なら nn、それ以外は n にした (かんい → kanni、かんな → kannna、ほんや → honnya)。n' は出さない
+- 変更したファイル: jamo-core/src/romaji.rs, jamo-core/src/romaji/table.rs, jamo-core/src/romaji/tests.rs, THIRD_PARTY_NOTICES, doc/done.md
+- よかったこと: 表から jamo 独自の行を消すだけで済み、flush の nn 特例も要らなくなった
+- 判断: ん の綴りの決め方を、語の数ではなく誰がどれだけの手間を払うかで決めた。mozc やタイピングソフトで覚えた手は ん + な行をもともと n 3 つで打つので、nn = ん にしても失うものがない。nn + 母音を ん + な行にすると、その手で打つ ん + 母音が別の実在語になり (tanni → 単に、zenninn → 前任)、正しく打つには n' (JIS では Shift+7) か xn が要る。nn = ん の手間は n を 1 つ多く打つことだけで、nn + y と nn + 母音で決まりが食い違うことも無くなる。ん + な行を n 2 つで打つ手 (konna、jibunno) は 1 打増える。母音ごとに分ける案 (nna は んな、nni は んい) は、母音ごとの例外を覚える必要があるので却下した。nn + 母音の両方の読みを変換側で当てて選ぶ案は、未確定の読みと変換結果の読みが食い違い、読みを 1 つに決める前提が崩れるので今回は対象外
 - 残課題: なし
