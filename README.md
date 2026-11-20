@@ -108,9 +108,11 @@ scripts/fetch-mozc.sh
 cargo run -p jamo-cli --release -- dict build --dict data/mozc -o data/mozc.dict
 ```
 
+`fetch-mozc.sh` は既定で mozc の master を取る。`MOZC_REF=<commit>` で取る版を固定できる (配る辞書を作るときは固定する)。
+
 辞書ディレクトリに `id.def` があれば mozc 形式、なければ IPAdic CSV として自動判別する。
 mozc 辞書データのライセンスは IPAdic license + BSD-3-Clause (mozc) + Okinawa dictionary
-license (詳細は取得される `data/mozc/README.txt`)。辞書バイナリを配布する場合は
+license (詳細は取得される `data/mozc/README.txt` と `data/mozc/LICENSE`)。辞書バイナリを配布する場合は
 これらの帰属表示を同梱すること。
 
 ## C API
@@ -259,7 +261,7 @@ fcitx5-configtool などで入力メソッド「Jamo」を追加する。IME の
 | ↑/↓ | — | 候補一覧を出して前/次の候補 |
 | 1-9 | — | 一覧の候補を選択 |
 | ←/→ | カーソル移動 | 文節移動 |
-| Shift+←/→ | — | 文節伸縮 |
+| Shift+←/→ | カーソル移動 | 文節伸縮 |
 | Ctrl+↓ | — | フォーカス文節までを確定 |
 | Enter | ひらがなのまま確定 | 確定 |
 | Escape | 入力を破棄 | 変換取消 |

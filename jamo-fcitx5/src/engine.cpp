@@ -269,9 +269,11 @@ bool JamoState::handleInput(const Key &key) {
         jamo_session_backspace(session_);
     } else if (key.check(FcitxKey_Delete)) {
         jamo_session_delete_forward(session_);
-    } else if (key.check(FcitxKey_Left)) {
+    } else if (key.check(FcitxKey_Left) ||
+               key.check(FcitxKey_Left, KeyState::Shift)) {
         jamo_session_move_cursor(session_, -1);
-    } else if (key.check(FcitxKey_Right)) {
+    } else if (key.check(FcitxKey_Right) ||
+               key.check(FcitxKey_Right, KeyState::Shift)) {
         jamo_session_move_cursor(session_, 1);
     } else if (key.check(FcitxKey_Home)) {
         jamo_session_set_cursor(session_, 0);

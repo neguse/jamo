@@ -694,6 +694,44 @@
 - 判断: mozc 辞書の読み (重複除く) で ん + や行 は 3291、ん + にゃ行 は 350 で、多い方を短く打てる mozc の流儀に戻した。nn + 母音 (konnichiha → こんにちは) は ん + 母音 8209、ん + な行 10037 とほぼ半々なので今のまま残した。逆変換の ん + や行 は n' のまま (nn でも打てるが、ん + 母音と同じ綴りにそろえる)
 - 残課題: なし
 
+### Rust 1.100 の clippy (needless_range_loop) 対応 ✓ (2026-11-13)
+- やったこと:
+    - Rust 1.100 の clippy で `viterbi.rs` の文節内の区切り候補 (終了位置ごとの走査) が needless_range_loop になり、CI の check ジョブが落ちていた
+    - 終了位置の範囲と `ends_at` のスライスを zip して回すようにした (挙動は同じ)
+- 変更したファイル: jamo-core/src/viterbi.rs, doc/done.md
+- よかったこと: 添字 end は node.start との比較にも使うので、enumerate + skip/take より範囲と zip した方が読みやすい
+- 判断: `#[allow]` で黙らせる案は却下 (書き換えで素直に消せる)
+- 残課題: `cargo clippy --all-targets` で出るテストコード側の警告 (bitvec.rs, ipadic/tests.rs) は CI の対象外なので残している
+
+### T183 文節伸縮で文節を増やす ✓ (2026-11-13)
+- やったこと:
+    - 伸縮しても文節数が増えなかった。最後の文節は縮められず、縮めた文字を受け取った次の文節は 1 文節に固定されたまま再変換されていた
+    - `viterbi::resize_convert`: 伸縮した文節までは境界を固定して変換し、後ろは通常の変換 (decode_nbest) で区切り直す。最後の文節を縮めると縮めた分が新しい文節になる
+    - `resize_boundaries` + `try_convert_with_boundaries` の組を呼んでいた session / wasm / serve / ime_server を `resize_convert` に置き換え、`resize_boundaries` は公開をやめた。wasm と serve が返す boundaries は再変換結果の文節から計算する
+    - 伸縮量 0 で添字が範囲外になり panic していたのを None にした
+- 変更したファイル: jamo-core/src/viterbi.rs, jamo-core/src/viterbi/tests.rs, jamo-core/src/session.rs, jamo-core/src/session/tests.rs, jamo-core/src/lib.rs, jamo-core/src/wasm.rs, jamo-cli/src/serve.rs, jamo-cli/src/ime_server.rs, doc/tasks.md, doc/current.md, doc/done.md
+- よかったこと: mozc 辞書で「今日は|いい天気」の最後の文節を縮めると「今日は|良い点|き」、「私の|名前は|中野です」の先頭を縮めると「私|の|名前は|中野です」になり、2 文節から 3 文節を作れる
+- 判断: 本家 (segments.cc の Segments::Resize) は縮めた分を次の文節にだけ足して FREE にし、それより後ろの文節は区切りを保つ。jamo は伸縮した文節より後ろをまとめて区切り直す (文節ごとの FIXED/FREE 状態を持たずに済む)。伸ばす量は次の文節の長さで止めず、入力末尾までの文字数を超えたら None (本家と同じ)。以前は次の文節の長さ以上伸ばすと次の文節をちょうど吸収していた
+- 残課題: 再変換で全文節の選択が先頭候補に戻る (伸縮前に選んだ候補を保たない) のは以前のまま
+
+### fcitx5 で変換前の Shift+←/→ がアプリへ漏れる問題の修正 ✓ (2026-11-13)
+- やったこと:
+    - 変換前のキー処理が修飾なしの ←/→ だけを見ていたため、Shift+←/→ を受け取らずアプリへ渡し、アプリ側のカーソルや選択が動いていた
+    - 変換前の Shift+←/→ を ←/→ と同じく preedit 内のカーソル移動にした。E2E に変換前の Shift+←/→ でカーソルが動くケースを足した
+- 変更したファイル: jamo-fcitx5/src/engine.cpp, jamo-fcitx5/test/testjamo.cpp, README.md, doc/done.md
+- よかったこと: testfrontend の sendKeyEvent の戻り値 (受け取ったか) で、アプリへ漏れたかを直接確かめられる
+- 判断: 本家 mozc の MS-IME 式キーマップ (src/data/keymap/ms-ime.tsv) と同じく Composition の Shift+←/→ は MoveCursorLeft/Right にする。変換を始めて最初の文節を縮める案は、mozc のどのキーマップ (ms-ime / atok / kotoeri) にもないので却下
+- 残課題: なし
+
+### fetch-mozc.sh で取る mozc の版を固定できるようにする ✓ (2026-11-18)
+- やったこと:
+    - `fetch-mozc.sh` が mozc の master を決め打ちで取っていて、辞書を配る build が毎回違う版の辞書を作りえた
+    - env `MOZC_REF` で取る commit か branch を選べるようにした (既定は master のまま)
+    - mozc の LICENSE (BSD-3-Clause の表示) も辞書のディレクトリに取るようにした。辞書バイナリを配るときに README.txt と一緒に同梱する物が揃う
+- 変更したファイル: scripts/fetch-mozc.sh, README.md, THIRD_PARTY_NOTICES, doc/done.md
+- よかったこと: raw.githubusercontent.com は branch 名と同じ形で commit を受けるので、URL の 1 箇所を変えるだけで済む
+- 判断: 固定する commit は jamo に持たず、辞書を配る側 (呼び出し側) が渡す。jamo の開発と CI は今までどおり master を追う
+
 ### nn を mozc と同じく常に ん にする ✓ (2026-11-21)
 - やったこと:
     - nn + 母音を ん + な行にする行 (nna → んな など) と nnn の行を消し、mozc の表と同じく nn をその場で ん に確定するようにした (hanni → はんい、rennai → れんあい、zenninn → ぜんいん)。ん + な行は n を 3 つ打つ (konnna → こんな、konnnichiha → こんにちは)

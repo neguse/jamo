@@ -4,7 +4,7 @@ Jamo は MIT License (LICENSE) で配布する。
 
 辞書データ (data/) は配布物に含めず、利用者が scripts/fetch-mozc.sh / scripts/fetch-ipadic.sh で取得する。
 辞書データとそれから作った辞書バイナリのライセンス (IPAdic、mozc 辞書、沖縄辞書) は
-取得される data/mozc/README.txt と mozc の LICENSE にあり、このファイルの対象外。
+取得される data/mozc/README.txt と data/mozc/LICENSE にあり、このファイルの対象外。
 辞書バイナリを配布する場合は、配布する側がそれらの表示を同梱する。
 
 ================================================================

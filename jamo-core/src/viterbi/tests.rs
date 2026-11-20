@@ -403,39 +403,74 @@ fn test_clauses_single_content() {
     assert_eq!(result.clauses[0].surface, "今日");
 }
 
-#[test]
-fn test_resize_extend() {
-    // 「きょうは」(12 bytes) を境界 [9, 12] (きょう|は) で分割
-    // clause 0 を 1文字伸ばす → 次の文節「は」(1文字) を完全吸収 → [12] (1文節)
-    let input = "きょうは"; // 12 bytes
-    let boundaries = vec![9, 12]; // きょう(9) | は(3)
-    let result = resize_boundaries(input, &boundaries, 0, 1);
-    assert_eq!(result, Some(vec![12]));
+fn resized_yomis(
+    input: &str,
+    boundaries: &[usize],
+    clause: usize,
+    delta: i32,
+) -> Option<Vec<String>> {
+    let dict = HashMapDict::test_dict();
+    resize_convert(
+        input,
+        boundaries,
+        clause,
+        delta,
+        &dict,
+        &SimpleConnectionCost,
+        5,
+    )
+    .map(|r| r.clauses.into_iter().map(|c| c.yomi).collect())
 }
 
 #[test]
-fn test_resize_shrink() {
-    // 「きょうは」境界 [12] (1文節) を 1文字縮める
-    // → [9, 12] (きょう|は)
-    let input = "きょうは"; // 12 bytes
-    let boundaries = vec![9, 12]; // きょう | は
-    let result = resize_boundaries(input, &boundaries, 0, -1);
-    // 「きょう」→ 3文字, -1 で 2文字 = 6 bytes (きょ)
-    assert_eq!(result, Some(vec![6, 12]));
+fn test_resize_extend_absorbs_next_clause() {
+    // きょう|は の文節0を1文字伸ばす → 「は」を吸収して1文節
+    let got = resized_yomis("きょうは", &[9, 12], 0, 1);
+    assert_eq!(got, Some(vec!["きょうは".to_string()]));
 }
 
 #[test]
-fn test_resize_boundary_limits() {
-    let input = "きょうは"; // 12 bytes
+fn test_resize_shrink_passes_chars_to_next_clause() {
+    let got = resized_yomis("きょうは", &[9, 12], 0, -1);
+    assert_eq!(got, Some(vec!["きょ".to_string(), "うは".to_string()]));
+}
+
+#[test]
+fn test_resize_shrink_last_clause_adds_clause() {
+    // きょうは|てんき の最後の文節を縮める → 縮めた分が新しい文節になる
+    let got = resized_yomis("きょうはてんき", &[12, 21], 1, -1);
+    assert_eq!(
+        got,
+        Some(vec![
+            "きょうは".to_string(),
+            "てん".to_string(),
+            "き".to_string()
+        ])
+    );
+}
+
+#[test]
+fn test_resize_resegments_clauses_after_focus() {
+    // きょうは|てんき の文節0を縮める → 残り「はてんき」は通常の変換と同じ区切りになる
+    let dict = HashMapDict::test_dict();
+    let rest = crate::convert_nbest("はてんき", &dict, &SimpleConnectionCost, 5);
+    assert!(rest.clauses.len() > 1);
+    let mut expected = vec!["きょう".to_string()];
+    expected.extend(rest.clauses.into_iter().map(|c| c.yomi));
+    assert_eq!(
+        resized_yomis("きょうはてんき", &[12, 21], 0, -1),
+        Some(expected)
+    );
+}
+
+#[test]
+fn test_resize_limits() {
     // 1文字文節は縮められない (なくなるため)
-    let boundaries = vec![3, 12]; // き | ょうは
-    let result = resize_boundaries(input, &boundaries, 0, -1);
-    assert_eq!(result, None);
-
-    // 最後の文節は伸縮不可
-    let boundaries = vec![9, 12];
-    let result = resize_boundaries(input, &boundaries, 1, 1);
-    assert_eq!(result, None);
+    assert_eq!(resized_yomis("きょうは", &[3, 12], 0, -1), None);
+    // 最後の文節は伸ばせない
+    assert_eq!(resized_yomis("きょうは", &[9, 12], 1, 1), None);
+    assert_eq!(resized_yomis("きょうは", &[9, 12], 0, 0), None);
+    assert_eq!(resized_yomis("きょうは", &[9, 12], 2, -1), None);
 }
 
 #[test]
@@ -458,7 +493,7 @@ fn test_validate_boundaries_rejects_invalid_offsets() {
 #[test]
 fn test_resize_rejects_invalid_boundaries_without_panic() {
     let input = "きょうは";
-    assert_eq!(resize_boundaries(input, &[1, input.len()], 0, 1), None);
+    assert_eq!(resized_yomis(input, &[1, input.len()], 0, 1), None);
 }
 
 #[test]
@@ -484,37 +519,6 @@ fn test_try_convert_with_boundaries_rejects_truncated_input() {
     let conn = SimpleConnectionCost;
     let result = try_convert_with_boundaries(input, &[9], &dict, &conn, 5);
     assert!(matches!(result, Err(BoundaryError::MissingInputEnd { .. })));
-}
-
-#[test]
-fn test_resize_and_reconvert() {
-    // フル変換 → 伸縮 → 再変換 のフロー
-    let dict = HashMapDict::test_dict();
-    let input = "きょうは";
-    let conn = SimpleConnectionCost;
-
-    // 初回変換: 自動文節分割
-    let result = decode_nbest(&mut Lattice::build(input, &dict), input, &conn, 5);
-
-    // 文節境界を取得
-    let mut boundaries: Vec<usize> = Vec::new();
-    let mut pos = 0;
-    for clause in &result.clauses {
-        pos += clause.yomi.len();
-        boundaries.push(pos);
-    }
-    assert_eq!(*boundaries.last().unwrap(), input.len());
-
-    // 文節 0 を縮める
-    if boundaries.len() > 1 {
-        if let Some(new_boundaries) = resize_boundaries(input, &boundaries, 0, -1) {
-            let new_result = convert_with_boundaries(input, &new_boundaries, &dict, &conn, 5);
-
-            // 読みが入力全体をカバー
-            let all_yomi: String = new_result.clauses.iter().map(|c| c.yomi.as_str()).collect();
-            assert_eq!(all_yomi, input);
-        }
-    }
 }
 
 // ---- T163: 数字と候補整形 ----

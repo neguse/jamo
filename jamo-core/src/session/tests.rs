@@ -197,6 +197,15 @@ fn test_resize_rejects_last_clause_extend() {
 }
 
 #[test]
+fn test_resize_shrink_last_clause_adds_clause() {
+    let (mut s, dict) = converting_session("kyouha");
+    s.resize(-1, &dict, &SimpleConnectionCost, 5, None).unwrap();
+    let yomis: Vec<&str> = s.clauses().iter().map(|c| c.yomi.as_str()).collect();
+    assert_eq!(yomis, ["きょう", "は"]);
+    assert_eq!(s.focus(), 0);
+}
+
+#[test]
 fn test_revert_returns_to_input_with_kana() {
     let (mut s, _dict) = converting_session("kyouha");
     s.revert().unwrap();
