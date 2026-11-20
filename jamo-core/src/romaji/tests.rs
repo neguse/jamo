@@ -113,22 +113,30 @@ fn test_sokuon() {
 
 #[test]
 fn test_nn() {
+    // nn は次の文字によらず ん
     assert_eq!(convert_all("nn"), "ん");
-    // nn + 母音は ん + な行
-    assert_eq!(convert_all("onna"), "おんな");
-    assert_eq!(convert_all("kannin"), "かんにん");
-    // n を 3 つ打っても同じ
-    assert_eq!(convert_all("onnna"), "おんな");
-    // nn + y は ん + や行、ん + にゃ行は nnn で打つ
+    assert_eq!(convert_all("hanni"), "はんい");
+    assert_eq!(convert_all("rennai"), "れんあい");
+    assert_eq!(convert_all("onna"), "おんあ");
     assert_eq!(convert_all("nnyaro"), "んやろ");
     assert_eq!(convert_all("shinnyuu"), "しんゆう");
-    assert_eq!(convert_all("shinnnyuu"), "しんにゅう");
-    // nn + 子音は ん + 子音
     assert_eq!(convert_all("sannka"), "さんか");
+    // ん + な行/にゃ行は n を 3 つ打つ
+    assert_eq!(convert_all("onnna"), "おんな");
+    assert_eq!(convert_all("kannnin"), "かんにん");
+    assert_eq!(convert_all("shinnnyuu"), "しんにゅう");
     // ん + 母音/y は n' でも打てる
     assert_eq!(convert_all("kan'i"), "かんい");
     assert_eq!(convert_all("hon'ya"), "ほんや");
     assert_eq!(convert_all("nnn"), "んん");
+}
+
+#[test]
+fn test_nn_emits_without_waiting() {
+    let mut conv = RomajiConverter::new();
+    assert_eq!(conv.feed('n'), RomajiResult::Pending);
+    assert_eq!(conv.feed('n'), RomajiResult::Emit("ん".to_string()));
+    assert_eq!(conv.pending(), "");
 }
 
 #[test]
@@ -152,9 +160,9 @@ fn test_kyou() {
 
 #[test]
 fn test_konnichiha() {
-    assert_eq!(convert_all("konnichiha"), "こんにちは");
-    // こんにちは を打つには konnnichiha (3つのn)
+    // nn は ん なので、こんにちは は n を 3 つ打つ
     assert_eq!(convert_all("konnnichiha"), "こんにちは");
+    assert_eq!(convert_all("konnichiha"), "こんいちは");
 }
 
 #[test]
@@ -337,9 +345,9 @@ fn test_kana_to_romaji_basic() {
 fn test_kana_to_romaji_sokuon_and_n() {
     assert_eq!(kana_to_romaji("きっと"), "kitto");
     assert_eq!(kana_to_romaji("あっ"), "axtu");
-    assert_eq!(kana_to_romaji("かんい"), "kan'i");
-    assert_eq!(kana_to_romaji("ほんや"), "hon'ya");
-    assert_eq!(kana_to_romaji("かんな"), "kanna");
+    assert_eq!(kana_to_romaji("かんい"), "kanni");
+    assert_eq!(kana_to_romaji("ほんや"), "honnya");
+    assert_eq!(kana_to_romaji("かんな"), "kannna");
     assert_eq!(kana_to_romaji("しんにゅう"), "shinnnyuu");
     for kana in [
         "かんい",

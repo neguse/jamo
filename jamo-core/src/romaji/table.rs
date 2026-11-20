@@ -312,6 +312,7 @@ pub(super) static ROMAJI_TABLE: &[(&str, &str)] = &[
     ("lyi", "ぃ"),
     ("lye", "ぇ"),
     ("xn", "ん"),
+    ("nn", "ん"),
     ("n'", "ん"),
 ];
 
@@ -340,15 +341,6 @@ pub(super) static CARRY_TABLE: &[(&str, &str, &str)] = &[
     ("zz", "っ", "z"),
     ("tch", "っ", "ch"),
     ("www", "w", "ww"),
-    // nn + 母音は ん + な行 (konnichiha → こんにちは)、ん + 母音は n' で打つ。
-    // nn + y は ん + や行 (nnyaro → んやろ)、ん + にゃ行は nnn で打つ
-    ("nn", "ん", ""),
-    ("nnn", "ん", "n"),
-    ("nna", "んな", ""),
-    ("nni", "んに", ""),
-    ("nnu", "んぬ", ""),
-    ("nne", "んね", ""),
-    ("nno", "んの", ""),
     // shimbun → しんぶん
     ("mb", "ん", "b"),
     ("mp", "ん", "p"),
